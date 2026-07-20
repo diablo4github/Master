@@ -4,7 +4,7 @@
 // re-theme a sprite you edit the palette, not the pixels.
 
 /** Supported square sprite sizes (pixels per side). */
-export type SpriteSize = 16 | 32;
+export type SpriteSize = 16 | 24 | 32;
 
 export interface Sprite {
   /** Lowercase kebab-case id, e.g. 'grassland' or 'orc-warrior'. */

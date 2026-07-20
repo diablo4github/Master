@@ -16,12 +16,12 @@ const DEFAULT_OUT_DIR = fileURLToPath(new URL('../../assets', import.meta.url));
 
 interface SheetSpec {
   name: string;
-  cellSize: 16 | 32;
+  cellSize: 16 | 24 | 32;
   sprites: Sprite[];
 }
 
 const SHEETS: SheetSpec[] = [
-  { name: 'terrain', cellSize: 16, sprites: TERRAIN_SPRITES },
+  { name: 'terrain', cellSize: 24, sprites: TERRAIN_SPRITES },
   { name: 'units', cellSize: 16, sprites: UNIT_SPRITES },
   { name: 'buildings', cellSize: 32, sprites: BUILDING_SPRITES },
 ];

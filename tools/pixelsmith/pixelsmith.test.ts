@@ -12,7 +12,7 @@ import { UNIT_SPRITES } from './sprites/units';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-function makeFlatSprite(id: string, size: 16 | 32 = 16): Sprite {
+function makeFlatSprite(id: string, size: 16 | 24 | 32 = 16): Sprite {
   return {
     id,
     size,
@@ -119,6 +119,18 @@ describe('packSheet', () => {
   });
 });
 
+describe('TERRAIN_SPRITES', () => {
+  it('are all authored at the 24x24 terrain cell size', () => {
+    for (const sprite of TERRAIN_SPRITES) {
+      expect(sprite.size).toBe(24);
+      expect(sprite.rows).toHaveLength(24);
+      for (const row of sprite.rows) {
+        expect(row).toHaveLength(24);
+      }
+    }
+  });
+});
+
 describe('buildAssets', () => {
   let outDir: string;
 
@@ -131,7 +143,7 @@ describe('buildAssets', () => {
     await buildAssets(outDir);
 
     const sheets: Array<{ name: string; count: number; cellSize: number }> = [
-      { name: 'terrain', count: TERRAIN_SPRITES.length, cellSize: 16 },
+      { name: 'terrain', count: TERRAIN_SPRITES.length, cellSize: 24 },
       { name: 'units', count: UNIT_SPRITES.length, cellSize: 16 },
       { name: 'buildings', count: BUILDING_SPRITES.length, cellSize: 32 },
     ];
