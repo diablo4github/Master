@@ -35,6 +35,18 @@ const SIZE_DIMENSIONS: Record<MapSize, { width: number; height: number }> = {
   huge: { width: 120, height: 120 },
 };
 
+/**
+ * School dimensions are MINI planes by design: small side-maps hosting a
+ * themed challenge, not full worlds (docs/DESIGN.md, "School dimensions").
+ * They scale gently with game size but stay a fraction of a world's area.
+ */
+const DIMENSION_SIZE_DIMENSIONS: Record<MapSize, { width: number; height: number }> = {
+  small: { width: 16, height: 16 },
+  medium: { width: 20, height: 20 },
+  large: { width: 24, height: 24 },
+  huge: { width: 28, height: 28 },
+};
+
 interface TerrainWeight {
   id: TerrainId;
   weight: number;
@@ -237,7 +249,8 @@ const MAX_BLOBS = 60;
 
 /** Generates one plane's map. Deterministic: same rng state + planeDef + size => identical map. */
 export function generateWorld(rng: Rng, planeDef: PlaneDef, size: MapSize): PlaneMap {
-  const { width, height } = SIZE_DIMENSIONS[size];
+  const { width, height } =
+    planeDef.kind === 'dimension' ? DIMENSION_SIZE_DIMENSIONS[size] : SIZE_DIMENSIONS[size];
   const numBlobs = Math.round(
     Math.min(MAX_BLOBS, Math.max(MIN_BLOBS, width * height * BLOBS_PER_TILE)),
   );

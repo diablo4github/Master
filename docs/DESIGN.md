@@ -39,9 +39,11 @@ Three **main worlds** plus five **school dimensions**.
 
 | World | Character |
 |-------|-----------|
-| **Meridia** *(placeholder name)* — the normal world | Red/green/blue magic thrives here. Default starting world. 18 playable races. |
-| **Umbra** *(placeholder name)* — the dark world | Black (Death) magic thrives. 6 playable races. |
-| **Lumina** *(placeholder name)* — the light world | White (Life) magic thrives. 6 playable races. |
+| **Meridia** — the normal world | Red/green/blue magic thrives here. Default starting world. 18 playable races. |
+| **Umbra** — the dark world | Black (Death) magic thrives. 6 playable races. |
+| **Lumina** — the light world | White (Life) magic thrives. 6 playable races. |
+
+*(World and dimension names approved by design 2026-07-20.)*
 
 Starting world: players start in Meridia by default. A **perk** allows starting
 in Umbra or Lumina, with restrictions:
@@ -51,18 +53,28 @@ in Umbra or Lumina, with restrictions:
 
 ### School dimensions
 
-Each school has its own **extra dimension** — a full game map — accessible only
-by **pure mages** (single-school wizards) of that school. These are the pure
-mage's compensation for narrow specialization: exclusive territory, resources,
-and secrets.
+Each school has its own **mini dimension** — a small side-map, not a full
+world — accessible only by **pure mages** (single-school wizards) of that
+school. The dimension is the pure mage's late-game power arc, earned in four
+steps:
 
-| School  | Dimension *(placeholder names)* |
-|---------|--------------------------------|
-| Life    | The Empyrean                   |
-| Death   | The Charnel Deep               |
-| Chaos   | The Maelstrom                  |
-| Nature  | The Wildroot                   |
-| Sorcery | The Aether                     |
+1. **Unlock through research** — a capstone line in the school's magical
+   studies attunes the wizard to their dimension and opens a rift.
+2. **Expedition** — the player travels there with a **hero-led army**; only a
+   hero can hold a rift open for troops.
+3. **Themed challenge** — each dimension poses a special challenge in its
+   school's character (see below). This is a real fight/quest, not a toll.
+4. **Reward** — completing the challenge grants **powerful, permanent
+   late-game bonuses**. Dedicated single-school wizards should be the most
+   dangerous wizards in a long game; the dimension is why.
+
+| School  | Dimension        | Challenge sketch *(placeholder — design pass pending)* |
+|---------|------------------|--------------------------------------------------------|
+| Life    | The Empyrean     | A trial of protection: shepherd and defend the innocent against waves of corruption. |
+| Death   | The Charnel Deep | A great harvest: claim what is owed from things that refuse to die. |
+| Chaos   | The Maelstrom    | Survive the storm: hold an anchor-point as the dimension itself escalates against you. |
+| Nature  | The Wildroot     | Tame the primeval: subdue or befriend the apex beasts of the first forest. |
+| Sorcery | The Aether       | Unravel the labyrinth: a shifting puzzle-maze of illusions and mirrored foes. |
 
 ## Races — 30 total
 

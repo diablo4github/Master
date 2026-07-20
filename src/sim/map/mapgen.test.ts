@@ -135,6 +135,26 @@ describe('generateWorld across all map sizes', () => {
   });
 });
 
+describe('mini school dimensions', () => {
+  it('dimensions generate as small side-maps, a fraction of a world at every size', () => {
+    const sizes: MapSize[] = ['small', 'medium', 'large', 'huge'];
+    for (const size of sizes) {
+      const world = generateWorld(createRng(9), MERIDIA, size);
+      const dimension = generateWorld(createRng(9), EMPYREAN, size);
+      // A dimension is mini: no more than a quarter of a world's area.
+      expect(dimension.width * dimension.height).toBeLessThanOrEqual(
+        (world.width * world.height) / 4,
+      );
+    }
+  });
+
+  it('dimension maps scale gently with game size', () => {
+    const small = generateWorld(createRng(9), CHARNEL_DEEP, 'small');
+    const huge = generateWorld(createRng(9), CHARNEL_DEEP, 'huge');
+    expect(huge.width).toBeGreaterThan(small.width);
+  });
+});
+
 describe('generateAllPlanes', () => {
   it('generates all 8 planes at medium size without error', () => {
     const maps = generateAllPlanes(createRng(2026), ALL_PLANES, 'medium');
