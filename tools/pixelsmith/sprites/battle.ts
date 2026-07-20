@@ -66,27 +66,34 @@ function spearman(): Sprite {
 // on the leading arm. Grey plate reads distinct from the spearman's leather.
 function swordsman(): Sprite {
   const g = makeGrid(SIZE);
+  // helmet is plate (same family as the torso), NOT bright metal — that
+  // stays reserved for the blade alone, so the raised sword pops instead
+  // of blending into a single gray mass with the head.
   fillRect(g, 6, 2, 9, 4, 'sk');
-  fillRect(g, 6, 1, 9, 2, 'me');
-  fillRect(g, 6, 1, 7, 1, 'mel');
+  fillRect(g, 6, 1, 9, 2, 'pl');
+  fillRect(g, 6, 1, 7, 1, 'pll');
   setPixel(g, 9, 3, 'o');
   // torso, plate
   fillRect(g, 5, 5, 10, 9, 'pl');
   fillRect(g, 5, 5, 6, 6, 'pll');
   fillRect(g, 9, 8, 10, 9, 'pld');
   fillRect(g, 5, 10, 10, 10, 'pld');
-  // kite shield: flat top tapering to a point at the bottom
+  // kite shield: flat top tapering to a point at the bottom, darker than
+  // the torso plate so it reads as its own object, not more armor.
   fillRect(g, 2, 5, 4, 8, 'sh');
   fillRect(g, 3, 9, 3, 9, 'sh');
   setPixel(g, 3, 10, 'sh');
   fillRect(g, 2, 5, 2, 7, 'shl');
   fillRect(g, 4, 6, 4, 8, 'shd');
-  // sword arm raised straight up, blade clear above the head
+  // sword arm: raised straight up, a full column clear of the helmet, with
+  // a bright blade, dark crossguard bar, and a wood-brown grip so it reads
+  // as a held weapon rather than another armor plate.
   fillRect(g, 10, 6, 11, 8, 'sk');
-  fillRect(g, 10, 3, 11, 5, 'me');
-  fillRect(g, 9, 5, 12, 5, 'med');
-  fillRect(g, 10, 0, 11, 3, 'me');
-  setPixel(g, 10, 0, 'mel');
+  fillRect(g, 11, 5, 12, 6, 'gr');
+  fillRect(g, 10, 4, 13, 4, 'med');
+  fillRect(g, 11, 0, 12, 3, 'me');
+  setPixel(g, 11, 0, 'mel');
+  setPixel(g, 12, 3, 'mel');
   fillRect(g, 5, 11, 6, 14, 'pl');
   fillRect(g, 9, 11, 10, 14, 'pl');
   fillRect(g, 5, 11, 5, 12, 'pll');
@@ -94,9 +101,9 @@ function swordsman(): Sprite {
   fillRect(g, 4, 15, 7, 15, 'bo');
   fillRect(g, 8, 15, 11, 15, 'bo');
   return battle('swordsman', {
-    o: OUTLINE, sk: SKIN.human, me: METAL.mid, mel: METAL.light, med: METAL.dark,
+    o: OUTLINE, sk: SKIN.human, me: METAL.light, mel: METAL.mid, med: METAL.dark, gr: EARTH.dark,
     pl: STONE.mid, pll: STONE.light, pld: STONE.dark,
-    sh: METAL.mid, shl: METAL.light, shd: METAL.dark, bo: STONE.shadow,
+    sh: STONE.dark, shl: STONE.mid, shd: STONE.shadow, bo: STONE.shadow,
   }, g);
 }
 
