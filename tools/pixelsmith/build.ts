@@ -9,6 +9,7 @@ import { encodePng } from './png';
 import { packSheet } from './sheet';
 import type { Sprite } from './sprite';
 import { BUILDING_SPRITES } from './sprites/buildings';
+import { CITY_SPRITES } from './sprites/cities';
 import { TERRAIN_SPRITES } from './sprites/terrain';
 import { UNIT_SPRITES } from './sprites/units';
 
@@ -24,6 +25,7 @@ const SHEETS: SheetSpec[] = [
   { name: 'terrain', cellSize: 24, sprites: TERRAIN_SPRITES },
   { name: 'units', cellSize: 16, sprites: UNIT_SPRITES },
   { name: 'buildings', cellSize: 32, sprites: BUILDING_SPRITES },
+  { name: 'cities', cellSize: 24, sprites: CITY_SPRITES },
 ];
 
 /**

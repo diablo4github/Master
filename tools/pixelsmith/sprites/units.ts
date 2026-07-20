@@ -3,8 +3,8 @@
 // of a shape, shadow chars on the bottom/right faces, matching the terrain
 // and building sprites for a consistent overall look.
 import type { Sprite } from '../sprite';
-import { compileSprite, fillRect, makeGrid, setPixel, type Grid } from '../pixels';
-import { DEATH, EARTH, FOREST, LIFE, METAL, OUTLINE, SKIN, WATER } from '../colors';
+import { compileSprite, fillRect, makeGrid, plot, setPixel, type Grid } from '../pixels';
+import { DEATH, EARTH, FOREST, LIFE, METAL, OUTLINE, SAND, SKIN, WATER } from '../colors';
 
 const SIZE = 16;
 
@@ -146,4 +146,42 @@ function angel(): Sprite {
   }, g);
 }
 
-export const UNIT_SPRITES: Sprite[] = [orcWarrior(), humanSpearman(), skeleton(), angel()];
+function settler(): Sprite {
+  const g = makeGrid(SIZE);
+  // head + soft cloth cap (no helmet — unarmed civilian)
+  fillRect(g, 6, 2, 9, 4, 's');
+  fillRect(g, 6, 1, 9, 2, 'c');
+  fillRect(g, 6, 1, 7, 1, 'cl');
+  setPixel(g, 9, 3, 'o');
+  // torso, plain homespun tunic
+  fillRect(g, 5, 5, 10, 9, 't');
+  fillRect(g, 5, 5, 6, 6, 'tl');
+  fillRect(g, 9, 8, 10, 9, 'td');
+  fillRect(g, 5, 10, 10, 10, 'td');
+  // left arm sliver; right arm grips a bindle stick slung over the shoulder
+  fillRect(g, 4, 6, 4, 8, 't');
+  fillRect(g, 10, 6, 11, 8, 's');
+  fillRect(g, 11, 7, 14, 8, 'st');
+  fillRect(g, 13, 4, 14, 7, 'st');
+  // bindle sack knotted at the top of the stick
+  fillRect(g, 12, 2, 15, 4, 'sk');
+  fillRect(g, 12, 2, 13, 3, 'skl');
+  // legs and plain boots
+  fillRect(g, 5, 11, 6, 14, 't');
+  fillRect(g, 9, 11, 10, 14, 't');
+  fillRect(g, 5, 11, 5, 12, 'tl');
+  fillRect(g, 9, 13, 10, 14, 'td');
+  fillRect(g, 4, 15, 7, 15, 'b');
+  fillRect(g, 8, 15, 11, 15, 'b');
+  // hand-cart wheel hint, peeking out from behind at ground level
+  plot(g, [[1, 12], [1, 13], [2, 11], [2, 14], [3, 12], [3, 13]], 'wh');
+  plot(g, [[2, 12], [2, 13]], 'wd');
+  return unit('settler', {
+    o: OUTLINE, s: SKIN.human, t: SAND.mid, tl: SAND.light, td: SAND.dark,
+    c: EARTH.dark, cl: EARTH.mid, st: EARTH.shadow,
+    sk: EARTH.mid, skl: EARTH.light, b: EARTH.shadow,
+    wh: METAL.mid, wd: METAL.dark,
+  }, g);
+}
+
+export const UNIT_SPRITES: Sprite[] = [orcWarrior(), humanSpearman(), skeleton(), angel(), settler()];
