@@ -80,18 +80,21 @@ export class BattleViewer {
   }
 
   async open(rec: BattleRecord): Promise<void> {
+    // Claim the slot synchronously so a re-render during ensureApp() (async)
+    // can't kick off a second open for the same battle.
+    this.rec = rec;
     await this.ensureApp();
     if (!this.app || !this.view) return;
-    this.rec = rec;
     this.app.canvas.style.display = 'block';
 
     this.feed = buildFeed(rec.report);
     this.lastFeedTick = -1;
     this.endShown = false;
 
-    this.buildChrome(rec);
+    // Parse the report first so getMaxTick() is correct when the scrubber is
+    // built, then wire the chrome and start playback.
     this.view.setReport(rec.report);
-    // Kick off playback shortly so the opening frame is visible first.
+    this.buildChrome(rec);
     this.view.seek(0);
     this.view.play();
   }
@@ -274,10 +277,17 @@ export class BattleViewer {
       this.highlightFeed(s.tick);
     }
 
-    // Reveal the end card once playback reaches the end and stops.
-    if (!s.playing && s.t >= s.maxTick + 0.999 && !this.endShown && this.endCard) {
-      this.endShown = true;
-      this.endCard.style.display = 'flex';
+    // Reveal the end card on reaching the final tick (whether by play-through or
+    // by scrubbing); hide it again when scrubbing back into the fight.
+    if (this.endCard) {
+      const atEnd = s.maxTick > 0 && s.tick >= s.maxTick;
+      if (atEnd && !this.endShown) {
+        this.endShown = true;
+        this.endCard.style.display = 'flex';
+      } else if (!atEnd && this.endShown) {
+        this.endShown = false;
+        this.endCard.style.display = 'none';
+      }
     }
   }
 

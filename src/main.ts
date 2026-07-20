@@ -173,7 +173,7 @@ async function main(): Promise<void> {
 
 interface MasterDevApi {
   store: Store;
-  simulateLairBattle: (opts?: { monsterIds?: string[] }) => BattleRecord | null;
+  simulateLairBattle: (opts?: { attackerIds?: string[]; monsterIds?: string[] }) => BattleRecord | null;
   injectLair: (partial?: Partial<LairState>) => LairState | null;
   state: () => unknown;
 }
@@ -209,37 +209,37 @@ function installDevHooks(store: Store): void {
       const game = store.getState().game;
       if (!game) return null;
       const humanId = store.getState().humanPlayerId;
-      const monsterIds = opts?.monsterIds ?? ['giant-spiders', 'wolf-pack'];
-
       const plane = store.getState().activePlane;
 
-      // Attacker: the human's units (garrison + escort). Fall back to a militia.
-      const attacker: StackUnit[] = [];
-      for (const s of game.units.filter((u) => u.owner === humanId).slice(0, 4)) {
-        const def = CONTENT.units[s.defId];
-        if (def) attacker.push({ state: s, def });
-      }
-      if (attacker.length === 0) {
-        const militia = CONTENT.units['militia'];
-        if (militia) {
-          const state: UnitState = {
-            id: 'dev-atk', owner: humanId, defId: 'militia', plane, x: 0, y: 0,
-            moves: militia.moves, hp: militia.combat.figures * militia.combat.hits,
-          };
-          attacker.push({ state, def: militia });
-        }
-      }
+      // A meaty, illustrative matchup so the replay shows the full vocabulary —
+      // archers kiting, a cavalry charge, a giant tanking, morale breaks — not
+      // a 3-tick skirmish. Includes the human's real lead unit for continuity,
+      // then tops up with representative soldiers.
+      const humanLead = game.units.find((u) => u.owner === humanId);
+      const attackerIds = opts?.attackerIds ?? ['human-swordsman', 'human-archer', 'human-knight'];
+      const monsterIds = opts?.monsterIds ?? ['giant-spiders', 'wolf-pack', 'ogre-brute'];
 
-      const defender: StackUnit[] = [];
-      monsterIds.forEach((mid, i) => {
-        const def = CONTENT.units[mid];
-        if (!def) return;
-        const state: UnitState = {
-          id: `mon-${i}`, owner: 'neutral', defId: mid, plane, x: 0, y: 0,
-          moves: def.moves, hp: def.combat.figures * def.combat.hits,
-        };
-        defender.push({ state, def });
-      });
+      const makeStack = (ids: string[], owner: string, prefix: string): StackUnit[] => {
+        const out: StackUnit[] = [];
+        ids.forEach((id, i) => {
+          const def = CONTENT.units[id];
+          if (!def) return;
+          const state: UnitState = {
+            id: `${prefix}-${i}`, owner, defId: id, plane, x: 0, y: 0,
+            moves: def.moves, hp: def.combat.figures * def.combat.hits,
+          };
+          out.push({ state, def });
+        });
+        return out;
+      };
+
+      const attacker: StackUnit[] = [];
+      if (humanLead) {
+        const def = CONTENT.units[humanLead.defId];
+        if (def) attacker.push({ state: humanLead, def });
+      }
+      attacker.push(...makeStack(attackerIds, humanId, 'atk'));
+      const defender = makeStack(monsterIds, 'neutral', 'mon');
 
       if (attacker.length === 0 || defender.length === 0) return null;
 

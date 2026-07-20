@@ -102,6 +102,71 @@ async function main(): Promise<void> {
     const panelTitle = await page.locator('.side-panel .panel-title').first().textContent();
     console.log(`smoke: side panel title = "${panelTitle ?? ''}"`);
 
+    // --- Battle viewer flow ------------------------------------------------
+    // The sim's lair-triggered battle append isn't merged yet, so we drive the
+    // same UI path through the dev hook (window.__master): seed a lair near the
+    // capital, "march" via a couple of End Turns, then fabricate a real battle
+    // (a genuine BattleReport via the sim's resolveStacks) as if the garrison
+    // reached the lair. This exercises the prompt → viewer → end-card flow.
+    console.log('smoke: waiting for dev hook…');
+    await page.waitForFunction('!!window.__master', undefined, { timeout: 10_000 });
+
+    console.log('smoke: seeding a lair + marching (End Turn ×2)…');
+    await page.evaluate('window.__master.injectLair()');
+    await sleep(200);
+    for (let i = 0; i < 2; i++) {
+      await page.locator('#end-turn').click();
+      await sleep(300);
+    }
+
+    console.log('smoke: triggering the lair battle…');
+    await page.evaluate('window.__master.simulateLairBattle()');
+
+    await page.waitForSelector('#battle-card', { timeout: 8_000 });
+    await sleep(400);
+    await page.screenshot({ path: `${OUT}/smoke-5-battle-prompt.png` });
+
+    const promptComp = await page.locator('#battle-card .card-comp').first().textContent();
+    console.log(`smoke: prompt attacker comp = "${(promptComp ?? '').trim()}"`);
+
+    console.log('smoke: watching the battle…');
+    await page.locator('#battle-watch').click();
+    await page.waitForSelector('.battle-viewer', { timeout: 8_000 });
+    // Pause at the opening frame first (before playback advances and the end
+    // card can appear over the controls), then exercise the 4× speed control
+    // and seek to a middle tick for a clean mid-battle frame.
+    await page.locator('.bv-play').click(); // pause (open() starts it playing)
+    await page.locator('.bv-speed', { hasText: '4×' }).click();
+    await page.evaluate(`
+      (() => {
+        const scrub = document.querySelector('.bv-scrub');
+        if (scrub) {
+          const max = parseInt(scrub.max, 10) || 1;
+          scrub.value = String(Math.max(1, Math.floor(max * 0.4)));
+          scrub.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      })()
+    `);
+    await sleep(400);
+    await page.screenshot({ path: `${OUT}/smoke-6-battle-mid.png` });
+
+    // Seek to the final tick so the end card resolves (no covered controls).
+    await page.evaluate(`
+      (() => {
+        const scrub = document.querySelector('.bv-scrub');
+        if (scrub) {
+          scrub.value = scrub.max;
+          scrub.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      })()
+    `);
+    await page.waitForSelector('.bv-endcard .bv-end-banner', { state: 'visible', timeout: 12_000 });
+    await sleep(400);
+    await page.screenshot({ path: `${OUT}/smoke-7-battle-end.png` });
+
+    const banner = await page.locator('.bv-end-banner').first().textContent();
+    console.log(`smoke: end card banner = "${(banner ?? '').trim()}"`);
+
     await browser.close();
     browserClosed = true;
   } finally {
