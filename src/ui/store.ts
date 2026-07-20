@@ -19,10 +19,15 @@ import {
   type LairState,
 } from './battleTypes';
 
-export interface Selection {
-  kind: 'city' | 'unit';
-  id: string;
-}
+export type Selection =
+  | { kind: 'city'; id: string }
+  | { kind: 'unit'; id: string }
+  | { kind: 'army'; id: string }
+  /** A multi-unit stack on a tile (no single id — identified by location). */
+  | { kind: 'stack'; plane: PlaneId; x: number; y: number };
+
+/** A pending move: whether the map click should move a solo unit or a whole army. */
+export type MoveMode = { kind: 'unit'; id: string } | { kind: 'army'; id: string };
 
 export interface Toast {
   id: number;
@@ -38,8 +43,15 @@ export interface UiState {
   selected: Selection | null;
   /** Lair the lair panel is showing, or null. */
   selectedLairId: string | null;
-  /** Unit id awaiting a move-target click, or null. */
-  moveMode: string | null;
+  /** A pending move (solo unit or whole army) awaiting a target click, or null. */
+  moveMode: MoveMode | null;
+  /** Unit ids ticked in the stack panel (for Form army), reset on reselection. */
+  stackChecked: string[];
+  /**
+   * When the End-Turn assistant opens an idle city, this pulses the city's
+   * "Add to queue" picker so the player sees what to do. Cleared on reselection.
+   */
+  highlightAddPicker: boolean;
   /** Whether the research overlay is open. */
   showResearch: boolean;
   /** Whether the battle-log list overlay is open. */
@@ -79,6 +91,8 @@ export class Store {
       selected: null,
       selectedLairId: null,
       moveMode: null,
+      stackChecked: [],
+      highlightAddPicker: false,
       showResearch: false,
       showBattleLog: false,
       viewerBattle: null,
@@ -116,6 +130,8 @@ export class Store {
       selected: null,
       selectedLairId: null,
       moveMode: null,
+      stackChecked: [],
+      highlightAddPicker: false,
       showResearch: false,
       showBattleLog: false,
       viewerBattle: null,
@@ -128,19 +144,66 @@ export class Store {
 
   setActivePlane(plane: PlaneId): void {
     if (plane === this.state.activePlane) return;
-    this.set({ activePlane: plane, selected: null, selectedLairId: null, moveMode: null });
+    this.set({
+      activePlane: plane,
+      selected: null,
+      selectedLairId: null,
+      moveMode: null,
+      stackChecked: [],
+      highlightAddPicker: false,
+    });
   }
 
   select(sel: Selection | null): void {
-    this.set({ selected: sel, selectedLairId: null, moveMode: null });
+    this.set({
+      selected: sel,
+      selectedLairId: null,
+      moveMode: null,
+      stackChecked: [],
+      highlightAddPicker: false,
+    });
+  }
+
+  /** Select a city and pulse its Add-to-queue picker (End-Turn assistant). */
+  openProduction(cityId: string): void {
+    this.set({
+      selected: { kind: 'city', id: cityId },
+      selectedLairId: null,
+      moveMode: null,
+      stackChecked: [],
+      highlightAddPicker: true,
+      showResearch: false,
+    });
   }
 
   selectLair(id: string | null): void {
-    this.set({ selectedLairId: id, selected: null, moveMode: null, showResearch: false });
+    this.set({
+      selectedLairId: id,
+      selected: null,
+      moveMode: null,
+      stackChecked: [],
+      highlightAddPicker: false,
+      showResearch: false,
+    });
   }
 
-  setMoveMode(unitId: string | null): void {
-    this.set({ moveMode: unitId });
+  setMoveMode(mode: MoveMode | null): void {
+    this.set({ moveMode: mode });
+  }
+
+  /** Toggle a unit's checkbox in the stack panel. */
+  toggleStackCheck(unitId: string): void {
+    const has = this.state.stackChecked.includes(unitId);
+    this.set({
+      stackChecked: has
+        ? this.state.stackChecked.filter((id) => id !== unitId)
+        : [...this.state.stackChecked, unitId],
+    });
+  }
+
+  /** Replace the stack panel's checkbox set (select-all / clear). */
+  setStackChecked(ids: string[]): void {
+    this.set({ stackChecked: ids });
   }
 
   toggleResearch(open?: boolean): void {

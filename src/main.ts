@@ -50,32 +50,52 @@ async function main(): Promise<void> {
     const game = st.game;
     if (!game) return;
 
+    // Pending move: a solo unit uses move-unit (the sim auto-detaches an army
+    // member), a whole army uses move-army.
     if (st.moveMode) {
-      store.command({ type: 'move-unit', unitId: st.moveMode, to: { x: tileX, y: tileY } });
+      const mm = st.moveMode;
+      if (mm.kind === 'army') {
+        store.command({ type: 'move-army', armyId: mm.id, to: { x: tileX, y: tileY } });
+      } else {
+        store.command({ type: 'move-unit', unitId: mm.id, to: { x: tileX, y: tileY } });
+      }
       store.setMoveMode(null);
       return;
     }
 
-    const unit = game.units.find(
-      (u) => u.owner === st.humanPlayerId && u.plane === st.activePlane && u.x === tileX && u.y === tileY,
+    const plane = st.activePlane;
+    const ownUnits = game.units.filter(
+      (u) => u.owner === st.humanPlayerId && u.plane === plane && u.x === tileX && u.y === tileY,
     );
-    const city = game.cities.find(
-      (c) => c.plane === st.activePlane && c.x === tileX && c.y === tileY,
-    );
-    const lair = store
-      .allLairs()
-      .find((l) => l.plane === st.activePlane && l.x === tileX && l.y === tileY);
+    const city = game.cities.find((c) => c.plane === plane && c.x === tileX && c.y === tileY);
+    const lair = store.allLairs().find((l) => l.plane === plane && l.x === tileX && l.y === tileY);
 
-    if (unit || city || lair) store.toggleResearch(false);
+    if (ownUnits.length || city || lair) store.toggleResearch(false);
 
-    if (unit && city) {
+    // Resolve a tile's own units to the right selection: a lone army becomes the
+    // army panel, a lone loose unit the unit panel, and any other multi-unit
+    // tile the stack panel.
+    const selectUnits = () => {
+      const armyIds = new Set(ownUnits.filter((u) => u.armyId !== undefined).map((u) => u.armyId!));
+      const looseCount = ownUnits.filter((u) => u.armyId === undefined).length;
+      if (armyIds.size === 1 && looseCount === 0) {
+        store.select({ kind: 'army', id: [...armyIds][0]! });
+      } else if (ownUnits.length === 1) {
+        store.select({ kind: 'unit', id: ownUnits[0]!.id });
+      } else {
+        store.select({ kind: 'stack', plane, x: tileX, y: tileY });
+      }
+    };
+
+    if (ownUnits.length > 0 && city) {
+      // A garrisoned city toggles: first click the city, next click its units.
       if (st.selected?.kind === 'city' && st.selected.id === city.id) {
-        store.select({ kind: 'unit', id: unit.id });
+        selectUnits();
       } else {
         store.select({ kind: 'city', id: city.id });
       }
-    } else if (unit) {
-      store.select({ kind: 'unit', id: unit.id });
+    } else if (ownUnits.length > 0) {
+      selectUnits();
     } else if (city) {
       store.select({ kind: 'city', id: city.id });
     } else if (lair) {

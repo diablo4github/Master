@@ -18,7 +18,7 @@ import {
 } from 'pixi.js';
 
 import type { GameState } from '@sim/core/state';
-import type { PlaneId, UnitDef } from '@sim/types';
+import type { PlaneId, UnitDef, UnitState } from '@sim/types';
 import type { PlaneMap } from '@sim/map/tiles';
 
 import type { SpriteBank } from './sprites';
@@ -36,10 +36,11 @@ export interface MapLair {
 const TILE = 24;
 const ZOOM_STEPS = [1, 2, 3] as const;
 
-export interface Selection {
-  kind: 'city' | 'unit';
-  id: string;
-}
+export type Selection =
+  | { kind: 'city'; id: string }
+  | { kind: 'unit'; id: string }
+  | { kind: 'army'; id: string }
+  | { kind: 'stack'; plane: PlaneId; x: number; y: number };
 
 export type TileClickHandler = (tileX: number, tileY: number) => void;
 
@@ -63,7 +64,7 @@ export class MapView {
   private cameraY = 0;
   private zoom = 2;
 
-  private labelAnchors: { text: Text; tx: number; ty: number }[] = [];
+  private labelAnchors: { node: Container; tx: number; ty: number }[] = [];
 
   onTileClick: TileClickHandler = () => {};
 
@@ -162,31 +163,107 @@ export class MapView {
       });
       label.anchor.set(0.5, 1);
       this.labelLayer.addChild(label);
-      this.labelAnchors.push({ text: label, tx: city.x + 0.5, ty: city.y - 0.15 });
-
-      if (selected && selected.kind === 'city' && selected.id === city.id) {
-        this.drawHighlight(city.x, city.y, 0x8ff0c0);
-      }
+      this.labelAnchors.push({ node: label, tx: city.x + 0.5, ty: city.y - 0.15 });
     }
 
-    // Units (on top).
+    // Units: collapse each owner's co-located stack into ONE token so the map
+    // stays readable. A stack of >1 gets a count badge; a stack holding any
+    // army member gets a banner pip.
+    const groups = new Map<string, UnitState[]>();
     for (const unit of state.units) {
       if (unit.plane !== plane) continue;
-      const def = this.units[unit.defId];
+      const key = `${unit.owner}|${unit.x}|${unit.y}`;
+      const arr = groups.get(key);
+      if (arr) arr.push(unit);
+      else groups.set(key, [unit]);
+    }
+
+    for (const arr of groups.values()) {
+      const lead = arr[0] as UnitState;
+      const def = this.units[lead.defId];
       const drawn = def ? battleSpriteFor(def) : 'swordsman';
       const tex = this.bank.battle.textures[drawn] ?? Texture.WHITE;
       const s = new Sprite(tex);
       s.anchor.set(0.5, 0.5);
-      s.x = unit.x * TILE + TILE / 2;
-      s.y = unit.y * TILE + TILE / 2 + 3;
+      s.x = lead.x * TILE + TILE / 2;
+      s.y = lead.y * TILE + TILE / 2 + 3;
       this.entityLayer.addChild(s);
 
-      if (selected && selected.kind === 'unit' && selected.id === unit.id) {
-        this.drawHighlight(unit.x, unit.y, 0xffe27a);
+      // Army banner pip: a small gold pennant on the token's shoulder.
+      if (arr.some((u) => u.armyId !== undefined)) {
+        const pip = new Graphics();
+        const bx = lead.x * TILE + TILE / 2 + 6;
+        const by = lead.y * TILE + 3;
+        pip
+          .moveTo(bx, by)
+          .lineTo(bx, by + 9)
+          .lineTo(bx + 7, by + 2.5)
+          .lineTo(bx, by + 1)
+          .fill({ color: 0xf2d58f })
+          .stroke({ color: 0x1a1208, width: 1 });
+        this.entityLayer.addChild(pip);
+      }
+
+      // Count badge (crisp, in the unscaled label layer, bottom-right of tile).
+      if (arr.length > 1) {
+        this.labelAnchors.push({
+          node: this.countBadge(arr.length),
+          tx: lead.x + 0.82,
+          ty: lead.y + 0.82,
+        });
       }
     }
 
+    // Selection highlight, resolved from the (possibly multi-kind) selection.
+    const hl = this.selectionTile(state, plane, selected);
+    if (hl) this.drawHighlight(hl.x, hl.y, hl.color);
+
     this.applyCamera();
+  }
+
+  /** A small round count badge ("×3") for a collapsed stack token. */
+  private countBadge(count: number): Container {
+    const cont = new Container();
+    const g = new Graphics();
+    g.circle(0, 0, 8).fill({ color: 0x1a1208, alpha: 0.9 }).stroke({ color: 0xf2d58f, width: 1.5 });
+    cont.addChild(g);
+    const t = new Text({
+      text: `${count}`,
+      style: {
+        fontFamily: 'monospace',
+        fontSize: 11,
+        fontWeight: 'bold',
+        fill: '#f2d58f',
+      },
+    });
+    t.anchor.set(0.5, 0.5);
+    cont.addChild(t);
+    return cont;
+  }
+
+  /** The tile (and highlight colour) the current selection points at, if any. */
+  private selectionTile(
+    state: GameState,
+    plane: PlaneId,
+    selected: Selection | null,
+  ): { x: number; y: number; color: number } | null {
+    if (!selected) return null;
+    if (selected.kind === 'city') {
+      const c = state.cities.find((x) => x.id === selected.id && x.plane === plane);
+      return c ? { x: c.x, y: c.y, color: 0x8ff0c0 } : null;
+    }
+    if (selected.kind === 'unit') {
+      const u = state.units.find((x) => x.id === selected.id && x.plane === plane);
+      return u ? { x: u.x, y: u.y, color: 0xffe27a } : null;
+    }
+    if (selected.kind === 'army') {
+      const u = state.units.find((x) => x.armyId === selected.id && x.plane === plane);
+      return u ? { x: u.x, y: u.y, color: 0xffc94a } : null;
+    }
+    // stack
+    return selected.plane === plane
+      ? { x: selected.x, y: selected.y, color: 0xffe27a }
+      : null;
   }
 
   private drawHighlight(tx: number, ty: number, color: number): void {
@@ -249,8 +326,8 @@ export class MapView {
 
   private updateLabels(originX: number, originY: number): void {
     for (const a of this.labelAnchors) {
-      a.text.x = Math.round(originX + a.tx * TILE * this.zoom);
-      a.text.y = Math.round(originY + a.ty * TILE * this.zoom);
+      a.node.x = Math.round(originX + a.tx * TILE * this.zoom);
+      a.node.y = Math.round(originY + a.ty * TILE * this.zoom);
     }
   }
 

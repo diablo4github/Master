@@ -12,7 +12,18 @@
 
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { chromium, type ConsoleMessage } from 'playwright';
+import { chromium, type ConsoleMessage, type Page } from 'playwright';
+
+/**
+ * Advance the turn regardless of the decision assistant: click the tiny
+ * "End anyway" escape hatch when it's present (a research/production decision is
+ * pending), otherwise the End Turn button is already in plain advance mode.
+ */
+async function forceEndTurn(page: Page): Promise<void> {
+  const force = page.locator('#end-turn-force');
+  if ((await force.count()) > 0) await force.first().click();
+  else await page.locator('#end-turn').click();
+}
 
 const ROOT = new URL('../..', import.meta.url).pathname;
 const OUT = '/tmp/claude-0/-home-user-Master/47d03efb-956f-5373-8ab8-0baa55c26e76/scratchpad';
@@ -86,21 +97,48 @@ async function main(): Promise<void> {
     await sleep(900); // let Pixi centre the camera and draw the map
     await page.screenshot({ path: `${OUT}/smoke-2-game.png` });
 
-    console.log('smoke: ending turn 3×…');
-    for (let i = 0; i < 3; i++) {
-      await page.locator('#end-turn').click();
-      await sleep(400);
-    }
-    await page.screenshot({ path: `${OUT}/smoke-3-turns.png` });
+    // --- End Turn = decision assistant ------------------------------------
+    // With research unset the button labels itself "Choose Research" up front.
+    const researchLabel = (await page.locator('#end-turn').textContent())?.trim() ?? '';
+    console.log(`smoke: end-turn label (research unset) = "${researchLabel}"`);
+    await page.screenshot({ path: `${OUT}/smoke-9-endturn.png` });
 
-    console.log('smoke: clicking the capital (screen centre)…');
-    await page.mouse.click(640, 400);
-    await page.waitForSelector('.side-panel .panel-title', { timeout: 8_000 });
+    console.log('smoke: clicking End Turn → research panel; choosing a study…');
+    await page.locator('#end-turn').click();
+    await page.waitForSelector('.side-panel.research', { timeout: 8_000 });
+    await page.locator('.study-row.available').first().click();
+    await sleep(250);
+
+    // Research set: the button now demands production. Clicking it opens the
+    // idle capital with its Add-to-queue picker highlighted.
+    const prodLabel = (await page.locator('#end-turn').textContent())?.trim() ?? '';
+    console.log(`smoke: end-turn label (research set) = "${prodLabel}"`);
+    console.log('smoke: clicking End Turn → city production…');
+    await page.locator('#end-turn').click();
+    await page.waitForSelector('.side-panel .q-block', { timeout: 8_000 });
     await sleep(300);
     await page.screenshot({ path: `${OUT}/smoke-4-city.png` });
 
     const panelTitle = await page.locator('.side-panel .panel-title').first().textContent();
     console.log(`smoke: side panel title = "${panelTitle ?? ''}"`);
+
+    // Queue granary → marketplace → militia in this one visit.
+    console.log('smoke: queuing granary + marketplace + militia…');
+    for (const name of ['Granary', 'Marketplace', 'Militia']) {
+      await page.locator('.build-opts .build-opt:not(:disabled)', { hasText: name }).first().click();
+      await sleep(200);
+    }
+    await page.waitForSelector('.q-item', { timeout: 8_000 });
+    const queued = await page.locator('.q-item').count();
+    console.log(`smoke: queue length = ${queued}`);
+    await page.screenshot({ path: `${OUT}/smoke-8-queue.png` });
+
+    console.log('smoke: advancing a few turns (End anyway when a decision pends)…');
+    for (let i = 0; i < 3; i++) {
+      await forceEndTurn(page);
+      await sleep(400);
+    }
+    await page.screenshot({ path: `${OUT}/smoke-3-turns.png` });
 
     // --- Battle viewer flow ------------------------------------------------
     // The sim's lair-triggered battle append isn't merged yet, so we drive the
@@ -115,7 +153,7 @@ async function main(): Promise<void> {
     await page.evaluate('window.__master.injectLair()');
     await sleep(200);
     for (let i = 0; i < 2; i++) {
-      await page.locator('#end-turn').click();
+      await forceEndTurn(page);
       await sleep(300);
     }
 

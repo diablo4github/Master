@@ -414,29 +414,39 @@ export class BattleView {
     if (f.status === 'routing') s.tint = 0xffcf9a;
     cont.addChild(s);
 
-    // Figure-count pips (top).
-    const pipR = Math.max(1.5, this.cell * 0.045);
-    const gap = pipR * 2.4;
-    const total = info.maxFigures;
-    const startX = -((total - 1) * gap) / 2;
-    const pips = new Graphics();
-    for (let i = 0; i < total; i++) {
-      const filled = i < f.figures;
-      pips
-        .circle(startX + i * gap, -r - pipR * 2, pipR)
-        .fill({ color: filled ? color : 0x000000, alpha: filled ? 1 : 0.4 })
-        .stroke({ color: 0x000000, alpha: 0.6, width: 1 });
-    }
-    cont.addChild(pips);
+    // Figure-count BADGE (top): regiments run to the hundreds, so a compact
+    // number reads where pips can't. It ticks down as figures fall.
+    const badgeY = -r - Math.max(8, this.cell * 0.3);
+    const bw = Math.max(18, this.cell * 0.62);
+    const bh = Math.max(11, this.cell * 0.3);
+    const badge = new Graphics();
+    badge
+      .roundRect(-bw / 2, badgeY - bh / 2, bw, bh, 3)
+      .fill({ color: 0x14110c, alpha: 0.85 })
+      .stroke({ color, width: 1.5, alpha: 0.95 });
+    cont.addChild(badge);
+    const countText = new Text({
+      text: `${f.figures}`,
+      style: {
+        fontFamily: 'monospace',
+        fontSize: Math.max(9, this.cell * 0.26),
+        fontWeight: 'bold',
+        fill: '#f4ecd6',
+      },
+    });
+    countText.anchor.set(0.5, 0.5);
+    countText.y = badgeY;
+    cont.addChild(countText);
 
     // HP bar (bottom).
     const barW = r * 1.7;
-    const barH = Math.max(2, this.cell * 0.07);
-    const frac = clamp(f.hp / Math.max(1, info.maxHp), 0, 1);
+    const barH = Math.max(2, this.cell * 0.09);
+    const barY = r + Math.max(2, this.cell * 0.06);
+    const hpFrac = clamp(f.hp / Math.max(1, info.maxHp), 0, 1);
     const bar = new Graphics();
-    bar.rect(-barW / 2, r + pipR, barW, barH).fill({ color: 0x000000, alpha: 0.7 });
-    const hpColor = frac > 0.5 ? 0x7fc96b : frac > 0.25 ? 0xe7c94a : 0xd6553f;
-    bar.rect(-barW / 2, r + pipR, barW * frac, barH).fill({ color: hpColor });
+    bar.rect(-barW / 2, barY, barW, barH).fill({ color: 0x000000, alpha: 0.7 });
+    const hpColor = hpFrac > 0.5 ? 0x7fc96b : hpFrac > 0.25 ? 0xe7c94a : 0xd6553f;
+    bar.rect(-barW / 2, barY, barW * hpFrac, barH).fill({ color: hpColor });
     cont.addChild(bar);
 
     this.tokenLayer.addChild(cont);
@@ -472,15 +482,17 @@ export class BattleView {
           break;
         }
         case 'damage': {
-          if (e.amount <= 0) break;
+          // At regiment scale the meaningful number is figures lost, not hp.
+          // Chip damage that fells no figure floats nothing (keeps it readable).
+          if (e.figuresLost <= 0) break;
           const rise = frac * this.cell * 0.9;
           const t = new Text({
-            text: `-${e.amount}`,
+            text: `-${e.figuresLost}`,
             style: {
               fontFamily: 'monospace',
               fontSize: Math.max(11, this.cell * 0.4),
               fontWeight: 'bold',
-              fill: e.figuresLost > 0 ? '#ff5a44' : '#ffb0a0',
+              fill: '#ff5a44',
               stroke: { color: '#1a0d08', width: 3 },
             },
           });

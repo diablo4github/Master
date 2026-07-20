@@ -5,18 +5,19 @@
  * routes through the store (which owns all sim mutation).
  */
 
-import { computeCityYields, cityPopulationCap } from '@sim/city/city';
+import { computeCityYields, cityPopulationCap, pickCityName, QUEUE_CAP } from '@sim/city/city';
 import type { CityState, UnitState, UnitDef } from '@sim/types';
 
 import type { Store } from './store';
 import { el } from './dom';
 import { empireSummary } from './econ';
-import { assembleBuildOptions } from './buildPicker';
 import { summarizeStudy } from './summarize';
 import { describeAbility } from './abilities';
 import type { LairState, BattleRecord } from './battleTypes';
-import { battleSpriteFor } from '@render/spriteMaps';
 import { sideComposition, sideThreat, battleStart } from './battleSummary';
+import { endTurnDecision, endTurnLabel } from './endTurn';
+import { queueView, assembleQueueOptions } from './queue';
+import { stackRows, armyView, canFormArmy, type UnitRow } from './army';
 
 function bar(fraction: number, color: string): HTMLElement {
   const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
@@ -72,10 +73,62 @@ function topBar(store: Store): HTMLElement {
       return b;
     });
 
-  const endTurn = el('button', { class: 'end-turn', type: 'button', id: 'end-turn', text: 'End Turn ▸' });
-  endTurn.addEventListener('click', () => {
-    store.command({ type: 'end-turn' });
+  // End Turn = decision assistant. The label reflects what a click will do
+  // BEFORE the click; a modifier (shift-click) or the tiny secondary button
+  // force the turn to advance regardless.
+  const selectedCityId = st.selected?.kind === 'city' ? st.selected.id : null;
+  const decision = endTurnDecision(game, store.content, st.humanPlayerId, selectedCityId);
+  const decisionCity =
+    decision.kind === 'production' ? game.cities.find((c) => c.id === decision.cityId) : undefined;
+  const endLabel = endTurnLabel(decision, decisionCity?.name);
+
+  const advance = () => store.command({ type: 'end-turn' });
+  const act = () => {
+    switch (decision.kind) {
+      case 'research':
+        store.toggleResearch(true);
+        break;
+      case 'production':
+        store.openProduction(decision.cityId);
+        if (decisionCity) store.requestCenter(decisionCity.x, decisionCity.y);
+        break;
+      case 'advance':
+        advance();
+        break;
+    }
+  };
+
+  const endTurn = el('button', {
+    class: `end-turn${decision.kind === 'advance' ? '' : ' assist'}`,
+    type: 'button',
+    id: 'end-turn',
+    text: endLabel,
+    title:
+      decision.kind === 'advance'
+        ? 'Advance to the next turn'
+        : 'Resolve this decision — shift-click to end the turn anyway',
   });
+  endTurn.addEventListener('click', (e) => {
+    if ((e as MouseEvent).shiftKey) advance();
+    else act();
+  });
+
+  // A small, clearly-labelled escape hatch when the assistant is holding a
+  // decision: end the turn without resolving it.
+  const forceEnd =
+    decision.kind === 'advance'
+      ? null
+      : (() => {
+          const b = el('button', {
+            class: 'end-turn-force',
+            id: 'end-turn-force',
+            type: 'button',
+            title: 'Skip remaining decisions and end the turn',
+            text: 'End anyway ▸',
+          });
+          b.addEventListener('click', () => advance());
+          return b;
+        })();
 
   const battles = store.allBattles();
   const watched = new Set(st.watchedBattleIds);
@@ -97,7 +150,7 @@ function topBar(store: Store): HTMLElement {
     el('div', { class: 'hud-right' }, [
       el('div', { class: 'plane-switch' }, planeBtns),
       logBtn,
-      endTurn,
+      el('div', { class: 'end-turn-group' }, [forceEnd, endTurn]),
     ]),
   ]);
 }
@@ -125,43 +178,7 @@ function cityPanel(store: Store, city: CityState): HTMLElement {
         city.buildings.map((bId) => el('li', { text: content.buildings[bId]?.name ?? bId })))
     : el('p', { class: 'dim', text: 'No buildings yet.' });
 
-  // Current build order.
-  const order = city.buildQueue[0];
-  let buildStatus: HTMLElement;
-  if (order) {
-    const def = order.kind === 'building' ? content.buildings[order.id] : content.units[order.id];
-    const cost = def && 'cost' in def && typeof def.cost === 'number' ? def.cost : 0;
-    buildStatus = el('div', { class: 'build-status' }, [
-      el('div', { class: 'build-row' }, [
-        el('span', { text: def?.name ?? order.id }),
-        el('span', { class: 'dim', text: `${Math.floor(order.progress)}/${cost}` }),
-      ]),
-      bar(cost > 0 ? order.progress / cost : 0, '#d69a4c'),
-    ]);
-  } else {
-    buildStatus = el('p', { class: 'dim', text: 'Idle — choose production below.' });
-  }
-
-  // Production picker.
-  const options = assembleBuildOptions(game, content, city);
-  const optionEls = options.map((o) => {
-    const btn = el('button', {
-      class: `build-opt${o.buildable ? '' : ' locked'}`,
-      type: 'button',
-      title: o.reason ?? `${o.name} — ${o.cost} production`,
-    }, [
-      el('span', { class: 'opt-name', text: o.name }),
-      el('span', { class: 'opt-meta', text: `${o.kind === 'unit' ? '⚔ ' : '⌂ '}${o.cost}` }),
-    ]);
-    if (o.buildable) {
-      btn.addEventListener('click', () => {
-        store.command({ type: 'set-build', cityId: city.id, order: { kind: o.kind, id: o.id } });
-      });
-    } else {
-      btn.disabled = true;
-    }
-    return btn;
-  });
+  const queueBlock = productionQueue(store, city, yields.production);
 
   return panelShell(store, `${city.name}`, `${race?.name ?? city.raceId} city`, [
     el('div', { class: 'panel-line' }, [
@@ -171,10 +188,107 @@ function cityPanel(store: Store, city: CityState): HTMLElement {
     yieldRow,
     el('h4', { class: 'panel-h', text: 'Buildings' }),
     buildingList,
-    el('h4', { class: 'panel-h', text: 'Production' }),
-    buildStatus,
-    el('div', { class: 'build-opts' }, optionEls),
+    queueBlock,
   ]);
+}
+
+/** ETA label for a queue row: turns, or ∞ when production can't finish it. */
+function etaText(turns: number | null): string {
+  return turns === null ? '∞' : `${turns}t`;
+}
+
+/**
+ * The full production-queue UI: the ordered queue (head shows live progress),
+ * per-item ▲▼ reorder and ✕ remove, cumulative ETA per item, and an
+ * "Add to queue" picker whose legality is checked with earlier-queued buildings
+ * counted as available (so granary→marketplace can be queued in one visit).
+ */
+function productionQueue(store: Store, city: CityState, production: number): HTMLElement {
+  const content = store.content;
+  const game = store.getState().game!;
+  const rows = queueView(content, city, production);
+  const full = city.buildQueue.length >= QUEUE_CAP;
+
+  const queueEls: (Node | null)[] = rows.length
+    ? rows.map((r) => {
+        const cost = r.cost;
+        const head = r.isHead;
+        const meta = el('div', { class: 'q-item-meta' }, [
+          el('span', { class: 'q-item-icon', text: r.kind === 'unit' ? '⚔' : '⌂' }),
+          el('span', { class: 'q-item-name', text: r.name }),
+          el('span', { class: 'q-item-eta', text: etaText(r.etaTurns) }),
+        ]);
+        const ctrl = el('div', { class: 'q-item-ctrl' }, [
+          reorderBtn(store, city.id, r.index, r.index - 1, '▲', r.index === 0),
+          reorderBtn(store, city.id, r.index, r.index + 1, '▼', r.index === rows.length - 1),
+          dequeueBtn(store, city.id, r.index),
+        ]);
+        const progressBits = head
+          ? [
+              el('div', { class: 'q-head-nums' }, [
+                el('span', { class: 'dim', text: `${Math.floor(r.progress)}/${cost}` }),
+              ]),
+              bar(cost > 0 ? r.progress / cost : 0, '#d69a4c'),
+            ]
+          : [];
+        return el('div', { class: `q-item${head ? ' head' : ''}` }, [
+          el('div', { class: 'q-item-top' }, [meta, ctrl]),
+          ...progressBits,
+        ]);
+      })
+    : [el('p', { class: 'dim', text: 'Queue empty — add production below.' })];
+
+  // Add-to-queue picker.
+  const options = assembleQueueOptions(game, content, city);
+  const optionEls = options.map((o) => {
+    const btn = el('button', {
+      class: `build-opt${o.buildable ? '' : ' locked'}${o.queued ? ' queued' : ''}`,
+      type: 'button',
+      title: o.reason ?? `${o.name} — ${o.cost} production`,
+    }, [
+      el('span', { class: 'opt-name', text: o.name }),
+      el('span', { class: 'opt-meta', text: `${o.kind === 'unit' ? '⚔ ' : '⌂ '}${o.cost}` }),
+    ]);
+    if (o.buildable && !full) {
+      btn.addEventListener('click', () => {
+        store.command({ type: 'queue-build', cityId: city.id, order: { kind: o.kind, id: o.id } });
+      });
+    } else {
+      btn.disabled = true;
+    }
+    return btn;
+  });
+
+  const highlight = store.getState().highlightAddPicker;
+  return el('div', { class: 'q-block' }, [
+    el('div', { class: 'panel-h q-head-row' }, [
+      el('span', { text: 'Production Queue' }),
+      el('span', { class: 'q-count', text: `${city.buildQueue.length}/${QUEUE_CAP}` }),
+    ]),
+    el('div', { class: 'q-list' }, queueEls),
+    el('h4', { class: `panel-h${highlight ? ' pulse' : ''}`, text: full ? 'Queue full' : 'Add to queue' }),
+    el('div', { class: `build-opts${highlight ? ' pulse' : ''}` }, optionEls),
+  ]);
+}
+
+function reorderBtn(
+  store: Store,
+  cityId: string,
+  from: number,
+  to: number,
+  glyph: string,
+  disabled: boolean,
+): HTMLElement {
+  const b = el('button', { class: 'q-ctl', type: 'button', text: glyph, title: 'Reorder' });
+  if (disabled) b.disabled = true;
+  else b.addEventListener('click', () => store.command({ type: 'reorder-build', cityId, from, to }));
+  return b;
+}
+
+function dequeueBtn(store: Store, cityId: string, index: number): HTMLElement {
+  const b = el('button', { class: 'q-ctl q-remove', type: 'button', text: '✕', title: 'Remove' });
+  b.addEventListener('click', () => store.command({ type: 'dequeue-build', cityId, index }));
+  return b;
 }
 
 function yieldCell(label: string, value: number, color: string): HTMLElement {
@@ -201,7 +315,7 @@ function unitPanel(store: Store, unit: UnitState): HTMLElement {
 
   const moveBtn = el('button', { class: 'action-btn', type: 'button', text: 'Move ▸' });
   moveBtn.addEventListener('click', () => {
-    store.setMoveMode(unit.id);
+    store.setMoveMode({ kind: 'unit', id: unit.id });
     store.toast('Click a destination tile.', 'info');
   });
 
@@ -209,18 +323,35 @@ function unitPanel(store: Store, unit: UnitState): HTMLElement {
   if (isSettler) {
     const foundBtn = el('button', { class: 'action-btn primary', type: 'button', text: 'Found City' });
     foundBtn.addEventListener('click', () => {
-      const name = window.prompt('Name the new city:', 'New Settlement');
-      if (name && name.trim()) {
-        const ok = store.command({ type: 'found-city', unitId: unit.id, name: name.trim() });
-        if (ok) store.select(null);
-      }
+      const st = store.getState();
+      const game = st.game!;
+      const player = game.players.find((p) => p.id === st.humanPlayerId);
+      const race = player ? store.content.races[player.setup.raceId] : undefined;
+      // Pre-fill with the next auto-drawn themed name; blank input omits the
+      // name and lets the sim draw it (same value, deterministically).
+      const suggested = race ? pickCityName(game, race) : '';
+      const name = window.prompt(`Name the new city (blank = ${suggested || 'auto'}):`, suggested);
+      if (name === null) return; // cancelled
+      const trimmed = name.trim();
+      const ok = store.command({
+        type: 'found-city',
+        unitId: unit.id,
+        ...(trimmed ? { name: trimmed } : {}),
+      });
+      if (ok) store.select(null);
     });
     actions.append(foundBtn);
   }
   body.push(actions);
 
-  if (store.getState().moveMode === unit.id) {
+  const mm = store.getState().moveMode;
+  if (mm && mm.kind === 'unit' && mm.id === unit.id) {
     body.push(el('p', { class: 'note', text: 'Awaiting destination — click the map.' }));
+  }
+  if (unit.armyId !== undefined) {
+    body.push(
+      el('p', { class: 'note', text: 'In an army. Moving it alone will detach it from the army.' }),
+    );
   }
   if (def?.description) body.push(el('p', { class: 'desc', text: def.description }));
 
@@ -305,6 +436,145 @@ function unitStat(label: string, value: number | string): HTMLElement {
     el('span', { class: 'us-label', text: label }),
     el('span', { class: 'us-val', text: String(value) }),
   ]);
+}
+
+// --- Stack & army panels ---------------------------------------------------
+
+function hpColor(frac: number): string {
+  return frac > 0.5 ? '#7fc96b' : frac > 0.25 ? '#e7c94a' : '#d6553f';
+}
+
+/**
+ * A unit line for the stack/army lists: name (clickable to select the
+ * individual), figure count ("342 / 350"), an hp bar, an army tag, and an
+ * optional Leave button for a unit already in an army.
+ */
+function unitRowEl(
+  store: Store,
+  row: UnitRow,
+  opts: { checkbox?: boolean; checked?: boolean; leave?: boolean },
+): HTMLElement {
+  const left: (Node | null)[] = [];
+  if (opts.checkbox) {
+    const cb = el('input', { class: 'stack-cb', type: 'checkbox' }) as HTMLInputElement;
+    cb.checked = !!opts.checked;
+    cb.addEventListener('change', () => store.toggleStackCheck(row.id));
+    left.push(cb);
+  }
+
+  const nameBtn = el('button', { class: 'stack-name', type: 'button', title: 'Select this unit' }, [
+    el('span', { text: row.name }),
+    row.armyId !== undefined ? el('span', { class: 'army-tag', text: '⚑' }) : null,
+  ]);
+  nameBtn.addEventListener('click', () => store.select({ kind: 'unit', id: row.id }));
+
+  const right: (Node | null)[] = [
+    el('span', { class: 'stack-figs', text: `${row.figures} / ${row.maxFigures}` }),
+  ];
+  if (opts.leave && row.armyId !== undefined) {
+    const lv = el('button', { class: 'stack-leave', type: 'button', text: 'Leave', title: 'Leave the army' });
+    lv.addEventListener('click', () => store.command({ type: 'leave-army', unitIds: [row.id] }));
+    right.push(lv);
+  }
+
+  return el('div', { class: 'stack-row' }, [
+    el('div', { class: 'stack-row-top' }, [
+      el('div', { class: 'stack-row-left' }, [...left, nameBtn]),
+      el('div', { class: 'stack-row-right' }, right),
+    ]),
+    bar(row.hpFrac, hpColor(row.hpFrac)),
+  ]);
+}
+
+/** Multi-unit stack panel: checkboxes + Form army; per-unit Leave / select. */
+function stackPanel(store: Store, plane: CityState['plane'], x: number, y: number): HTMLElement {
+  const st = store.getState();
+  const game = st.game!;
+  const rows = stackRows(game, store.content, st.humanPlayerId, plane, x, y);
+
+  if (rows.length === 0) {
+    return panelShell(store, 'Stack', `(${x}, ${y})`, [
+      el('p', { class: 'dim', text: 'No units here.' }),
+    ]);
+  }
+
+  const rowIds = rows.map((r) => r.id);
+  const checked = new Set(st.stackChecked.filter((id) => rowIds.includes(id)));
+  const allChecked = rowIds.every((id) => checked.has(id));
+
+  const selectAll = el('label', { class: 'stack-all' }, [
+    (() => {
+      const cb = el('input', { type: 'checkbox' }) as HTMLInputElement;
+      cb.checked = allChecked;
+      cb.addEventListener('change', () => store.setStackChecked(allChecked ? [] : rowIds));
+      return cb;
+    })(),
+    el('span', { text: 'Select all' }),
+  ]);
+
+  const rowEls = rows.map((r) =>
+    unitRowEl(store, r, { checkbox: true, checked: checked.has(r.id), leave: true }),
+  );
+
+  const canForm = canFormArmy(rows, checked);
+  const formBtn = el('button', { class: 'action-btn primary', type: 'button', text: `Form army (${checked.size})` });
+  if (canForm) {
+    formBtn.addEventListener('click', () => {
+      const ok = store.command({ type: 'form-army', unitIds: [...checked] });
+      if (ok) {
+        store.setStackChecked([]);
+        // Re-select the freshly formed army by re-selecting the stack; the map
+        // click path will resolve a single-army tile to the army panel.
+        store.select({ kind: 'stack', plane, x, y });
+      }
+    });
+  } else {
+    formBtn.disabled = true;
+  }
+
+  return panelShell(store, 'Stack', `(${x}, ${y}) · ${rows.length} units`, [
+    el('p', { class: 'note', text: 'Tick units and Form army, or click a name to inspect one.' }),
+    selectAll,
+    el('div', { class: 'stack-list' }, rowEls),
+    el('div', { class: 'panel-actions' }, [formBtn]),
+  ]);
+}
+
+/** Army panel: members, slowest pace, total figures, army move, per-member ops. */
+function armyPanel(store: Store, armyId: string): HTMLElement {
+  const st = store.getState();
+  const game = st.game!;
+  const view = armyView(game, store.content, armyId);
+
+  if (view.members.length === 0) {
+    return panelShell(store, 'Army', 'disbanded', [
+      el('p', { class: 'dim', text: 'This army no longer exists.' }),
+    ]);
+  }
+
+  const moveBtn = el('button', { class: 'action-btn', type: 'button', text: 'Move army ▸' });
+  moveBtn.addEventListener('click', () => {
+    store.setMoveMode({ kind: 'army', id: armyId });
+    store.toast('Click a destination tile — the whole army marches.', 'info');
+  });
+
+  const rowEls = view.members.map((r) => unitRowEl(store, r, { leave: true }));
+
+  const body: (Node | null)[] = [
+    el('div', { class: 'panel-line' }, [
+      el('span', { text: `${view.members.length} units · pace ${view.pace} · ${view.totalFigures} figures` }),
+    ]),
+    el('div', { class: 'panel-actions' }, [moveBtn]),
+    el('h4', { class: 'panel-h', text: 'Members' }),
+    el('div', { class: 'stack-list' }, rowEls),
+  ];
+
+  const mm = st.moveMode;
+  if (mm && mm.kind === 'army' && mm.id === armyId) {
+    body.push(el('p', { class: 'note', text: 'Awaiting destination — click the map.' }));
+  }
+
+  return panelShell(store, 'Army', 'moves and fights as one', body);
 }
 
 // --- Lair panel ------------------------------------------------------------
@@ -579,11 +849,17 @@ export function renderGameOverlay(store: Store): HTMLElement {
     const lair = store.allLairs().find((l) => l.id === st.selectedLairId);
     if (lair) side = lairPanel(store, lair);
   } else if (st.selected?.kind === 'city') {
-    const city = game.cities.find((c) => c.id === st.selected!.id);
+    const id = st.selected.id;
+    const city = game.cities.find((c) => c.id === id);
     if (city) side = cityPanel(store, city);
   } else if (st.selected?.kind === 'unit') {
-    const unit = game.units.find((u) => u.id === st.selected!.id);
+    const id = st.selected.id;
+    const unit = game.units.find((u) => u.id === id);
     if (unit) side = unitPanel(store, unit);
+  } else if (st.selected?.kind === 'army') {
+    side = armyPanel(store, st.selected.id);
+  } else if (st.selected?.kind === 'stack') {
+    side = stackPanel(store, st.selected.plane, st.selected.x, st.selected.y);
   }
 
   // The Watch/Skip prompt appears when a new human battle is unacknowledged and
