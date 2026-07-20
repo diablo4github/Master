@@ -49,6 +49,13 @@ export const PACK_HUNTER_BONUS = 3; // only when flanking with another pack-hunt
 export const CHARGE_MIN_TILES = 2; // must cover ground to count as a charge
 export const CHARGE_MORALE_PENALTY_K = 3; // × charge ability bonus
 export const CHARGE_MOMENTUM_K = 1; // × (mass × speed)
+/**
+ * "Set against charge": a reach-2 line braced to receive a charge does bonus
+ * damage on its opportunity strike — the charger's own momentum (mass × speed)
+ * impales it on the spears. This is why spears blunt cavalry, emergently, with
+ * no anti-cavalry tag anywhere.
+ */
+export const IMPALE_K = 0.2; // × (charger mass × speed), added to the brace strike
 
 // ---------------------------------------------------------------------------
 // Geometry — square grid, 8-neighbour, Chebyshev distance (matches the

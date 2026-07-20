@@ -154,8 +154,9 @@ function approachAndStrike(ctx: BattleContext, c: Combatant, target: Combatant):
   if (!isAdjacent(c, target) || c.figures <= 0) return;
 
   const charging = canCharge(c) && moved >= 2;
-  // Spears / first-strikers hit the incoming unit before it lands its blow.
-  opportunityStrikes(ctx, c, preAdjacent);
+  // Spears / first-strikers hit the incoming unit before it lands its blow;
+  // a braced reach-2 line impales a charger's momentum.
+  opportunityStrikes(ctx, c, preAdjacent, charging);
   if (c.figures <= 0 || c.status !== 'fighting') return;
   if (target.figures <= 0) {
     // Its target died to opportunity fire — swing at whoever else is adjacent.

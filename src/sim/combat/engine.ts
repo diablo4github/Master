@@ -56,9 +56,9 @@ import {
   ATTACK_FLANK_BONUS,
   ATTACK_REAR_BONUS,
   PACK_HUNTER_BONUS,
-  CHARGE_MIN_TILES,
   CHARGE_MORALE_PENALTY_K,
   CHARGE_MOMENTUM_K,
+  IMPALE_K,
   MAX_TICKS,
 } from './internal';
 import type { MoveReason, DamageKind } from './events';
@@ -239,7 +239,7 @@ export function meleeAttack(
   ctx: BattleContext,
   attacker: Combatant,
   target: Combatant,
-  opts: { charging?: boolean; kind?: DamageKind; firstStrike?: boolean } = {},
+  opts: { charging?: boolean; kind?: DamageKind; firstStrike?: boolean; bonusDamage?: number } = {},
 ): void {
   if (attacker.figures <= 0 || target.figures <= 0) return;
   if (!canMeleeReach(attacker, target)) return; // can't reach a flyer
@@ -261,7 +261,10 @@ export function meleeAttack(
   if (target.status === 'routing') evasion += EVASION_ROUTING;
 
   const pHit = clamp(HIT_BASE + HIT_K * (attackVal - evasion), HIT_FLOOR, HIT_CEIL);
-  const perHit = Math.max(1, attacker.def.combat.melee.damage + chargeBonus - target.def.combat.armor);
+  const perHit = Math.max(
+    1,
+    attacker.def.combat.melee.damage + chargeBonus + (opts.bonusDamage ?? 0) - target.def.combat.armor,
+  );
 
   let landed = 0;
   for (let f = 0; f < attacker.figures; f++) {
@@ -336,14 +339,18 @@ export function opportunityStrikes(
   ctx: BattleContext,
   mover: Combatant,
   preAdjacent: readonly string[],
+  moverCharging: boolean,
 ): void {
+  const momentum = mover.def.combat.mass * mover.def.combat.speed;
   for (const d of adjacentEnemies(ctx, mover)) {
     if (mover.figures <= 0) break;
     if (preAdjacent.includes(d.id)) continue; // not fresh contact
     if (d.status !== 'fighting') continue;
     if (reachPriority(d.def) <= reachPriority(mover.def)) continue;
     if (!canMeleeReach(d, mover)) continue;
-    meleeAttack(ctx, d, mover, { kind: 'opportunity', firstStrike: true });
+    // A reach-2 line set to receive a charge impales the charger's momentum.
+    const bonusDamage = moverCharging && d.def.combat.melee.reach >= 2 ? Math.round(momentum * IMPALE_K) : 0;
+    meleeAttack(ctx, d, mover, { kind: 'opportunity', firstStrike: true, bonusDamage });
   }
 }
 

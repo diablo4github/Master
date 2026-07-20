@@ -93,7 +93,9 @@ export function packHunterFlank(
     if (!hasAbility(ally.def, 'pack-hunter')) continue;
     if (chebyshev(ally.x, ally.y, target.x, target.y) > 1) continue;
     const allyDir = dirIndexTo(target.x, target.y, ally.x, ally.y);
-    if (dirDiff(attackerDir, allyDir) >= 2) return ally.id; // flanking together
+    // Two pack members pressing the same prey from different tiles are flanking
+    // it together (any distinct approach angle; a lone pack-hunter never procs).
+    if (dirDiff(attackerDir, allyDir) >= 1) return ally.id;
   }
   return null;
 }
