@@ -22,7 +22,13 @@ import { generateAllPlanes } from '../map/mapgen';
 import type { PlaneMap } from '../map/tiles';
 import { getTile, neighbors } from '../map/tiles';
 import { isPassable, chebyshev } from '../units/units';
-import { foundCity, spawnUnit, CAPITAL_START_POP } from '../city/city';
+import {
+  foundCity,
+  spawnUnit,
+  provenanceName,
+  recordRaised,
+  CAPITAL_START_POP,
+} from '../city/city';
 import type { BattleReport } from '../combat/events';
 
 /**
@@ -263,7 +269,26 @@ export function createGame(settings: GameSettings, content: GameContent): GameSt
 
     // Found the capital immediately. Passing no name auto-draws the first free
     // themed city name for the player's race (deterministic across the game).
-    foundCity(state, content, player.id, setup.raceId, plane, x, y, undefined, CAPITAL_START_POP);
+    const capital = foundCity(
+      state,
+      content,
+      player.id,
+      setup.raceId,
+      plane,
+      x,
+      y,
+      undefined,
+      CAPITAL_START_POP,
+    );
+
+    // Starting units muster from the capital, so they carry its provenance
+    // ("1st Grokhaz Orc Warriors") just like later trained regiments.
+    const raiseFromCapital = (unit: { defId: string; name?: string }) => {
+      const def = content.units[unit.defId];
+      if (!def) return;
+      recordRaised(capital, unit.defId);
+      unit.name = provenanceName(capital, def);
+    };
 
     // Spawn a settler on an adjacent passable, non-peak land tile (falling
     // back to the capital tile itself if the city is entirely hemmed in).
@@ -278,18 +303,16 @@ export function createGame(settings: GameSettings, content: GameContent): GameSt
         break;
       }
     }
-    // TODO(provenance): once the city agent exports provenanceName/recordRaised,
-    // name the starting settler and garrison for their capital ("1st Grokhaz
-    // Orc Warriors") instead of leaving them at their def name. Those exports do
-    // not exist yet, so starting units keep the def-name fallback for now.
     if (content.units['settler']) {
-      spawnUnit(state, content, player.id, 'settler', plane, settlerX, settlerY);
+      raiseFromCapital(
+        spawnUnit(state, content, player.id, 'settler', plane, settlerX, settlerY),
+      );
     }
 
     // Spawn one garrison unit on the capital tile.
     const garrisonId = pickGarrisonUnitId(content, setup.raceId);
     if (content.units[garrisonId]) {
-      spawnUnit(state, content, player.id, garrisonId, plane, x, y);
+      raiseFromCapital(spawnUnit(state, content, player.id, garrisonId, plane, x, y));
     }
   });
 
