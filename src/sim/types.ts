@@ -220,6 +220,11 @@ export interface BuildingDef {
 export interface StudyDef {
   id: string;
   name: string;
+  /**
+   * Magic studies belong to a school and are researchable by any wizard of
+   * that school (alongside their race's tree). Race studies omit this.
+   */
+  school?: SchoolId;
   /** Research cost in research points. */
   cost: number;
   requires?: readonly string[];
@@ -356,12 +361,19 @@ export interface CityState {
   buildings: string[];
   /** Front of the queue is under construction. */
   buildQueue: BuildOrder[];
+  /**
+   * Regiments raised here per unit def, for provenance naming
+   * ("1st Grokhaz Orc Warriors"). Absent = none raised yet.
+   */
+  raised?: Record<string, number>;
 }
 
 export interface UnitState {
   id: string;
   owner: string;
   defId: string;
+  /** Provenance name, e.g. "1st Grokhaz Orc Warriors". Falls back to def name. */
+  name?: string;
   /** Army membership; undefined = independent. Armies move and fight as one. */
   armyId?: string;
   plane: PlaneId;
@@ -388,6 +400,11 @@ export interface GameSettings {
 
 export interface PlayerSetup {
   wizardId: string;
+  /**
+   * The wizard's schools, denormalized from the wizard def so the sim can
+   * gate magic studies without importing content. Absent = no magic access.
+   */
+  schools?: readonly SchoolId[];
   /** Customized retort loadout (schools are fixed by the wizard). */
   retorts: readonly string[];
   startWorld: WorldId;

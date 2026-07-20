@@ -166,6 +166,26 @@ wizard warfare arrives with the AI-opponents milestone.
 MoO1-style abstraction. Sliders, ranked priorities, and smart defaults over
 micromanagement. If a screen would make the player do arithmetic, abstract it.
 
+**Cities work the land.** A city's yields come from its population working the
+best tiles of its local catchment (a 5×5 reach, each tile claimed by one city
+only). Terrain determines what a site can ever be — a fishing village on
+tundra never rivals a breadbasket capital — and food potential caps growth, so
+city sites are a strategic choice and infinite sprawl starves.
+
+**Regiments have provenance.** Trained units are named for home and order of
+muster: "1st Grokhaz Orc Warriors". Summoned creatures are cast, not built —
+they never appear in production; they arrive through the casting interface
+(future milestone).
+
+**Research has two shelves**: your **race's** studies (crafts and culture) and
+your **wizard's magic** (one tree per school you know). One study active at a
+time — committing is the decision.
+
+**Mundane vs mythic**: regiments of men beat regiments of men. Great monsters
+are terror weapons — massed archery alone must not cheaply delete them
+(volleys saturate against a single great beast); bringing one down should cost
+blood, elites, or magic.
+
 Conventions in service of that:
 
 - **Armies**: units combine into named armies that move and fight as one
