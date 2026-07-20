@@ -327,6 +327,7 @@ export function makeState(opts: {
   players: PlayerState[];
   cities?: CityState[];
   units?: UnitState[];
+  armyOrders?: GameState['armyOrders'];
   lairs?: GameState['lairs'];
   battles?: GameState['battles'];
   nextEntityId?: number;
@@ -346,6 +347,7 @@ export function makeState(opts: {
     players: opts.players,
     cities: opts.cities ?? [],
     units: opts.units ?? [],
+    armyOrders: opts.armyOrders ?? {},
     lairs: opts.lairs ?? [],
     battles: opts.battles ?? [],
     nextEntityId: opts.nextEntityId ?? 1,

@@ -25,6 +25,18 @@ import { isPassable, chebyshev } from '../units/units';
 import { foundCity, spawnUnit, CAPITAL_START_POP } from '../city/city';
 import type { BattleReport } from '../combat/events';
 
+/**
+ * A standing order attached to an army, persisted in GameState so armies never
+ * "forget" what the player told them to do between turns.
+ *  - move:    march toward (x, y); advanceTurn auto-marches the army there as
+ *             far as each turn's movement allows until it arrives, its path
+ *             becomes unreachable, or a battle interrupts it.
+ *  - fortify: hold position (dug in). Excludes the army from the end-turn
+ *             "idle armies" assistant.
+ * JSON-plain by construction.
+ */
+export type ArmyOrder = { kind: 'move'; x: number; y: number } | { kind: 'fortify' };
+
 /** Per-player research progress toward the active magical study. */
 export interface ResearchState {
   /** Study currently being researched, or null if none selected. */
@@ -93,6 +105,12 @@ export interface GameState {
   players: PlayerState[];
   cities: CityState[];
   units: UnitState[];
+  /**
+   * Standing orders keyed by army id. An army with no entry here is idle
+   * (surfaced by the end-turn assistant when it still has movement). Entries
+   * are deleted when their army disbands.
+   */
+  armyOrders: Record<string, ArmyOrder>;
   /** Neutral monster lairs seeded at worldgen. */
   lairs: LairState[];
   /** Append-only log of resolved battles (replayable reports). */
@@ -229,6 +247,7 @@ export function createGame(settings: GameSettings, content: GameContent): GameSt
     players,
     cities: [],
     units: [],
+    armyOrders: {},
     lairs: [],
     battles: [],
     nextEntityId: 1,
@@ -259,6 +278,10 @@ export function createGame(settings: GameSettings, content: GameContent): GameSt
         break;
       }
     }
+    // TODO(provenance): once the city agent exports provenanceName/recordRaised,
+    // name the starting settler and garrison for their capital ("1st Grokhaz
+    // Orc Warriors") instead of leaving them at their def name. Those exports do
+    // not exist yet, so starting units keep the def-name fallback for now.
     if (content.units['settler']) {
       spawnUnit(state, content, player.id, 'settler', plane, settlerX, settlerY);
     }

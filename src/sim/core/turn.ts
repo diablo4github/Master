@@ -12,7 +12,7 @@
  * the UI relies on those messages verbatim.
  */
 
-import type { GameState, GameContent, LairState } from './state';
+import type { ArmyOrder, GameState, GameContent, LairState } from './state';
 import type { BuildOrder, CityState, PlaneId, UnitState, YieldBundle } from '../types';
 import {
   computeCityYields,
@@ -40,7 +40,9 @@ export type Command =
   | { type: 'form-army'; unitIds: string[] }
   | { type: 'join-army'; armyId: string; unitIds: string[] }
   | { type: 'leave-army'; unitIds: string[] }
+  | { type: 'merge-stack'; plane: PlaneId; x: number; y: number }
   | { type: 'move-army'; armyId: string; to: { x: number; y: number } }
+  | { type: 'fortify-army'; armyId: string }
   // City & research:
   | { type: 'found-city'; unitId: string; name?: string }
   | { type: 'set-research'; studyId: string };
@@ -83,7 +85,11 @@ export function applyCommand(
       if (city.buildQueue.length >= QUEUE_CAP) {
         throw new Error(`${city.name}'s build queue is full (max ${QUEUE_CAP})`);
       }
-      if (city.buildQueue.some((o) => o.id === cmd.order.id)) {
+      // Duplicate UNIT orders are legal (queue three militia); duplicate
+      // BUILDING orders are not — a building is a one-off, so a second copy in
+      // the queue is rejected here (an already-BUILT one is caught by
+      // buildBlockReason below).
+      if (cmd.order.kind === 'building' && city.buildQueue.some((o) => o.id === cmd.order.id)) {
         throw new Error(`'${cmd.order.id}' is already queued in ${city.name}`);
       }
       // Loose queue-time validation: a building whose prerequisite is queued
@@ -153,10 +159,27 @@ export function applyCommand(
     case 'leave-army':
       return leaveArmy(structuredClone(state), playerId, cmd.unitIds);
 
+    case 'merge-stack':
+      return mergeStack(structuredClone(state), playerId, cmd.plane, cmd.x, cmd.y);
+
     case 'move-army': {
       const next = structuredClone(state);
       requirePlayer(next, playerId);
-      moveArmyWithBattles(next, content, playerId, cmd.armyId, cmd.to.x, cmd.to.y);
+      // Validate ownership before recording intent, so a bad army id never
+      // leaves a dangling order. An explicit move order replaces any prior
+      // order (including fortify).
+      requireArmyAnchor(next, playerId, cmd.armyId);
+      next.armyOrders[cmd.armyId] = { kind: 'move', x: cmd.to.x, y: cmd.to.y };
+      const outcome = marchArmy(next, content, playerId, cmd.armyId, cmd.to.x, cmd.to.y, true);
+      reconcileMarchOrder(next, cmd.armyId, outcome);
+      return next;
+    }
+
+    case 'fortify-army': {
+      const next = structuredClone(state);
+      requirePlayer(next, playerId);
+      requireArmyAnchor(next, playerId, cmd.armyId);
+      next.armyOrders[cmd.armyId] = { kind: 'fortify' };
       return next;
     }
 
@@ -184,7 +207,14 @@ export function applyCommand(
       if (!race) throw new Error(`Unknown race '${player.setup.raceId}'`);
       const study = content.studies[cmd.studyId];
       if (!study) throw new Error(`Unknown study '${cmd.studyId}'`);
-      if (!race.studies.includes(cmd.studyId)) {
+      // Two research shelves: a study is legal if it belongs to the player's
+      // RACE studies list, OR it is a magic study whose school the wizard knows
+      // (player.setup.schools). Prereqs (below) are validated the same way for
+      // both — a school study's chain lives within its own school tree.
+      const isRaceStudy = race.studies.includes(cmd.studyId);
+      const isSchoolStudy =
+        study.school !== undefined && (player.setup.schools ?? []).includes(study.school);
+      if (!isRaceStudy && !isSchoolStudy) {
         throw new Error(`${race.name} cannot research '${study.name}'`);
       }
       if (player.completedStudies.includes(cmd.studyId)) {
@@ -386,8 +416,51 @@ function cleanupArmies(state: GameState, armyId?: string): void {
     const members = armyMembers(state, id);
     if (members.length <= 1) {
       for (const m of members) delete m.armyId;
+      // A disbanded army forgets its standing order.
+      delete state.armyOrders[id];
     }
   }
+}
+
+/**
+ * Resolves and validates an army's anchor member (its first live unit in state
+ * order), throwing the standard errors if the army is unknown or not owned by
+ * `playerId`. Used by commands that take an army id.
+ */
+function requireArmyAnchor(state: GameState, playerId: string, armyId: string): UnitState {
+  const members = armyMembers(state, armyId);
+  if (members.length === 0) throw new Error(`Unknown army '${armyId}'`);
+  const anchor = members[0]!;
+  if (anchor.owner !== playerId) throw new Error(`Army '${armyId}' is not owned by ${playerId}`);
+  return anchor;
+}
+
+/** The standing order attached to an army, or undefined if it is idle. */
+export function armyOrderOf(state: GameState, armyId: string): ArmyOrder | undefined {
+  return state.armyOrders[armyId];
+}
+
+/**
+ * Armies owned by `playerId` that have NO standing order and still have
+ * movement to spend — the set the end-turn assistant surfaces so the player
+ * never wastes an army's turn. Fortified and move-ordered armies both carry an
+ * order and are therefore excluded. Deterministic: army ids are returned in the
+ * order their members first appear in `state.units`.
+ */
+export function idleArmies(state: GameState, playerId: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of state.units) {
+    if (u.owner !== playerId || u.armyId === undefined) continue;
+    const armyId = u.armyId;
+    if (seen.has(armyId)) continue;
+    seen.add(armyId);
+    if (state.armyOrders[armyId]) continue; // fortified or move-ordered
+    const members = armyMembers(state, armyId);
+    const remaining = members.reduce((m, x) => Math.min(m, x.moves), Infinity);
+    if (remaining > 0) out.push(armyId);
+  }
+  return out;
 }
 
 /** form-army: groups ≥2 co-located, army-free, same-owner units into a new army. */
