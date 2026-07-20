@@ -126,7 +126,7 @@ function playSession(): GameState {
     }
 
     // Capital build order: two militia (the strike stack), then granary, then
-    // marketplace. Re-queued whenever the queue empties.
+    // marketplace. Appended to the queue whenever it empties.
     const capital = state.cities[0]!;
     if (capital.buildQueue.length === 0) {
       let order: { kind: 'building' | 'unit'; id: string } | null = null;
@@ -138,31 +138,34 @@ function playSession(): GameState {
       } else if (!capital.buildings.includes('marketplace')) {
         order = { kind: 'building', id: 'marketplace' };
       }
-      if (order) state = applyCommand(state, content, me, { type: 'set-build', cityId: capital.id, order });
+      if (order) state = applyCommand(state, content, me, { type: 'queue-build', cityId: capital.id, order });
     }
 
-    // March the militia stack to staging, then attack the lair exactly once.
+    // Raise a two-militia strike force, FORM IT INTO AN ARMY, march the army to
+    // the staging tile, then attack the lair with the whole army exactly once.
     if (!attacked && state.cities.length >= 2) {
       const strike = state.units.filter((u) => u.owner === me && u.defId === 'militia').slice(0, 2);
       if (strike.length >= 2) {
-        const staged = (id: string) => {
-          const u = state.units.find((x) => x.id === id);
-          return !!u && u.x === staging.x && u.y === staging.y;
-        };
-        const ids = strike.map((u) => u.id);
-        if (ids.every(staged)) {
-          state = applyCommand(state, content, me, {
-            type: 'move-unit',
-            unitId: ids[0]!,
-            to: { x: targetLair.x, y: targetLair.y },
-          });
-          attacked = true;
-        } else {
-          for (const id of ids) {
-            const u = state.units.find((x) => x.id === id);
-            if (u && u.moves > 0 && !(u.x === staging.x && u.y === staging.y)) {
-              state = applyCommand(state, content, me, { type: 'move-unit', unitId: id, to: staging });
-            }
+        // Form the army once, while both militia are still co-located.
+        let armyId = strike[0]!.armyId;
+        if (armyId === undefined) {
+          const [a, b] = strike;
+          if (a && b && a.x === b.x && a.y === b.y && b.armyId === undefined) {
+            state = applyCommand(state, content, me, { type: 'form-army', unitIds: [a.id, b.id] });
+            armyId = state.units.find((u) => u.id === a.id)!.armyId;
+          }
+        }
+        if (armyId !== undefined) {
+          const anchor = state.units.find((u) => u.armyId === armyId)!;
+          if (anchor.x === staging.x && anchor.y === staging.y) {
+            state = applyCommand(state, content, me, {
+              type: 'move-army',
+              armyId,
+              to: { x: targetLair.x, y: targetLair.y },
+            });
+            attacked = true;
+          } else if (anchor.moves > 0) {
+            state = applyCommand(state, content, me, { type: 'move-army', armyId, to: staging });
           }
         }
       }
