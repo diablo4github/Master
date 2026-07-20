@@ -36,9 +36,10 @@ import type { MoraleTrigger } from './events';
 
 const DISCIPLINE_WEIGHT = 0.25;
 
-/** Skill → composure. Veterans steady the line; green troops flinch. */
+/** Skill → composure. Veterans steady the line; green troops flinch. This is
+ *  the ONLY place skill touches morale (and skill never touches to-hit). */
 export function composure(c: Combatant): number {
-  return (c.def.skill - 30) / 3;
+  return (c.def.skill - 30) / 2.5;
 }
 
 function disciplineBonus(c: Combatant): number {

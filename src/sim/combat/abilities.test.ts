@@ -35,11 +35,14 @@ const UNDEAD_FOE = mkUnit('wights', {
   combat: { figures: 300, hits: 1, melee: { attack: 4, damage: 2, reach: 1 }, armor: 1, speed: 2, mass: 1, morale: 0, discipline: 0 },
 });
 
+const INSPIRER_COMBAT = { figures: 120, hits: 2, melee: { attack: 5, damage: 3, reach: 1 as const }, armor: 3, speed: 2, mass: 2, morale: 85, discipline: 85 };
 const INSPIRER = mkUnit('captain', {
   skill: 60,
   abilities: [{ type: 'inspire', radius: 8, bonus: 30 }],
-  combat: { figures: 120, hits: 2, melee: { attack: 5, damage: 3, reach: 1 }, armor: 3, speed: 2, mass: 2, morale: 85, discipline: 85 },
+  combat: INSPIRER_COMBAT,
 });
+/** Identical captain WITHOUT the aura — the control, so the test isolates inspire. */
+const PLAIN_CAPTAIN = mkUnit('sergeant', { skill: 60, abilities: [], combat: INSPIRER_COMBAT });
 
 const PRIEST = mkUnit('priest', {
   skill: 55,
@@ -105,20 +108,29 @@ describe('fear vs undead immunity, inspire counter-pressure', () => {
     expect(undead.events.filter((e) => e.type === 'morale-check' && e.unitId.startsWith('u'))).toHaveLength(0);
   });
 
-  it('an inspire aura measurably reduces friendly routs', () => {
+  it('an inspire aura measurably steadies allies (higher morale-check pass rate than an identical captain without it)', () => {
     const seeds = [5, 6, 7, 8, 9, 10];
-    const routs = (withCaptain: boolean): number => {
+    // Same army both times — the ONLY difference is whether the captain inspires.
+    // Inspire raises the pass THRESHOLD of every nearby check, so the faithful
+    // measure is the fraction of the militia's nerve checks that hold. (Counting
+    // rout *events* is misleading: steadier troops live longer and so accumulate
+    // more checks — and more rally-then-rebreak cycles — over a longer fight.)
+    const passRate = (captain: typeof INSPIRER): number => {
+      let passed = 0;
       let total = 0;
       for (const seed of seeds) {
-        const defenders = withCaptain
-          ? { units: [unit('m0', MILITIA), unit('m1', MILITIA), unit('cap', INSPIRER)] }
-          : { units: [unit('m0', MILITIA), unit('m1', MILITIA)] };
+        const defenders = { units: [unit('m0', MILITIA), unit('m1', MILITIA), unit('cap', captain)] };
         const r = runBattle({ seed, attacker: sideOf(SWORDSMEN, 5, 's'), defender: defenders, terrain: { plane: 'meridia', terrain: 'grassland' } });
-        total += r.events.filter((e) => e.type === 'rout' && (e.unitId === 'm0' || e.unitId === 'm1')).length;
+        for (const e of r.events) {
+          if (e.type === 'morale-check' && (e.unitId === 'm0' || e.unitId === 'm1')) {
+            total += 1;
+            if (e.passed) passed += 1;
+          }
+        }
       }
-      return total;
+      return total === 0 ? 1 : passed / total;
     };
-    expect(routs(true)).toBeLessThan(routs(false));
+    expect(passRate(INSPIRER)).toBeGreaterThan(passRate(PLAIN_CAPTAIN));
   });
 });
 
