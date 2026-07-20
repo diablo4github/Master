@@ -2,14 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { MOVE_COSTS } from '@sim/units/units';
 import { UNITS } from '@data/units';
+import type { UnitDef } from '@sim/types';
 import {
   TERRAIN_SPRITE_MAP,
-  UNIT_SPRITE_MAP,
+  battleSpriteFor,
+  battleGroundColor,
   citySpriteFor,
 } from './spriteMaps';
 
 import terrainManifest from '../../assets/terrain.json';
-import unitsManifest from '../../assets/units.json';
+import battleManifest from '../../assets/battle.json';
 import citiesManifest from '../../assets/cities.json';
 
 interface Manifest {
@@ -20,7 +22,7 @@ function ids(m: unknown): Set<string> {
 }
 
 const terrainDrawn = ids(terrainManifest);
-const unitDrawn = ids(unitsManifest);
+const battleDrawn = ids(battleManifest);
 const cityDrawn = ids(citiesManifest);
 
 // MOVE_COSTS is a Record<TerrainId, number> spanning all 30 sim terrain ids,
@@ -47,20 +49,50 @@ describe('TERRAIN_SPRITE_MAP', () => {
       expect(terrainDrawn.has(drawn), `${id} -> ${drawn}`).toBe(true);
     }
   });
+
+  it('battleGroundColor returns a colour for every terrain', () => {
+    for (const id of ALL_TERRAIN_IDS) {
+      const c = battleGroundColor(id as keyof typeof TERRAIN_SPRITE_MAP);
+      expect(typeof c, id).toBe('number');
+      expect(c, id).toBeGreaterThanOrEqual(0);
+    }
+  });
 });
 
-describe('UNIT_SPRITE_MAP', () => {
-  it('covers every unit def in the roster', () => {
-    for (const id of Object.keys(UNITS)) {
-      expect(UNIT_SPRITE_MAP[id], id).toBeDefined();
+describe('battleSpriteFor', () => {
+  it('resolves EVERY unit in the roster to a drawn battle sprite (totality)', () => {
+    const allIds = Object.keys(UNITS);
+    expect(allIds.length).toBeGreaterThan(140); // ~152 units
+    for (const id of allIds) {
+      const def = UNITS[id] as UnitDef;
+      const sprite = battleSpriteFor(def);
+      expect(battleDrawn.has(sprite), `${id} -> ${sprite}`).toBe(true);
     }
   });
 
-  it('maps every unit to a real drawn sprite in the manifest', () => {
-    for (const id of Object.keys(UNIT_SPRITE_MAP)) {
-      const drawn = UNIT_SPRITE_MAP[id];
-      expect(unitDrawn.has(drawn as string), `${id} -> ${drawn}`).toBe(true);
-    }
+  it('picks the identity-defining archetype for representative units', () => {
+    const pick = (id: string) => battleSpriteFor(UNITS[id] as UnitDef);
+    // undead ability wins first.
+    expect(pick('skeleton')).toBe('undead');
+    expect(pick('zombie')).toBe('undead');
+    // Life-school summon → celestial.
+    expect(pick('angel')).toBe('celestial');
+    // Lone breath-weapon creature → dragon.
+    expect(pick('elder-dragon')).toBe('dragon');
+    expect(pick('fire-drake')).toBe('dragon');
+    // Reach-2 polearm → spearman.
+    expect(pick('human-spearman')).toBe('spearman');
+    // Rule chosen for the horse archer: role cavalry wins → cavalry.
+    expect(pick('nomad-horse-archer')).toBe('cavalry');
+    // Flyer.
+    expect(pick('wyvern')).toBe('flyer');
+    // Foot archer.
+    expect(pick('human-archer')).toBe('archer');
+    // Generic line infantry falls through to swordsman.
+    expect(pick('human-swordsman')).toBe('swordsman');
+    // Named beast/pack overrides.
+    expect(pick('giant-spiders')).toBe('swarm');
+    expect(pick('great-boar')).toBe('beast');
   });
 });
 

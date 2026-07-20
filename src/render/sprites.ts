@@ -13,11 +13,15 @@ import terrainUrl from '../../assets/terrain.png';
 import unitsUrl from '../../assets/units.png';
 import citiesUrl from '../../assets/cities.png';
 import buildingsUrl from '../../assets/buildings.png';
+import battleUrl from '../../assets/battle.png';
+import lairUrl from '../../assets/lair.png';
 
 import terrainManifest from '../../assets/terrain.json';
 import unitsManifest from '../../assets/units.json';
 import citiesManifest from '../../assets/cities.json';
 import buildingsManifest from '../../assets/buildings.json';
+import battleManifest from '../../assets/battle.json';
+import lairManifest from '../../assets/lair.json';
 
 interface ManifestEntry {
   id: string;
@@ -57,6 +61,10 @@ export interface SpriteBank {
   units: Sheet;
   cities: Sheet;
   buildings: Sheet;
+  /** 14 combat archetypes (16px) — used by battle viewer and strategic map. */
+  battle: Sheet;
+  /** Lair marker (24px). */
+  lair: Sheet;
 }
 
 let bankPromise: Promise<SpriteBank> | null = null;
@@ -67,13 +75,15 @@ export function loadSprites(): Promise<SpriteBank> {
     // Make nearest the default for any texture created before per-source setup.
     TextureSource.defaultOptions.scaleMode = 'nearest';
     bankPromise = (async () => {
-      const [terrain, units, cities, buildings] = await Promise.all([
+      const [terrain, units, cities, buildings, battle, lair] = await Promise.all([
         loadSheet(terrainUrl, terrainManifest as Manifest),
         loadSheet(unitsUrl, unitsManifest as Manifest),
         loadSheet(citiesUrl, citiesManifest as Manifest),
         loadSheet(buildingsUrl, buildingsManifest as Manifest),
+        loadSheet(battleUrl, battleManifest as Manifest),
+        loadSheet(lairUrl, lairManifest as Manifest),
       ]);
-      return { terrain, units, cities, buildings };
+      return { terrain, units, cities, buildings, battle, lair };
     })();
   }
   return bankPromise;

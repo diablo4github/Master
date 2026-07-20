@@ -18,11 +18,20 @@ import {
 } from 'pixi.js';
 
 import type { GameState } from '@sim/core/state';
-import type { PlaneId } from '@sim/types';
+import type { PlaneId, UnitDef } from '@sim/types';
 import type { PlaneMap } from '@sim/map/tiles';
 
 import type { SpriteBank } from './sprites';
-import { TERRAIN_SPRITE_MAP, UNIT_SPRITE_MAP, citySpriteFor } from './spriteMaps';
+import { TERRAIN_SPRITE_MAP, battleSpriteFor, citySpriteFor } from './spriteMaps';
+
+/** Minimal lair shape the map view needs (matches src/ui/battleTypes.ts). */
+export interface MapLair {
+  id: string;
+  plane: PlaneId;
+  x: number;
+  y: number;
+  cleared: boolean;
+}
 
 const TILE = 24;
 const ZOOM_STEPS = [1, 2, 3] as const;
@@ -37,6 +46,7 @@ export type TileClickHandler = (tileX: number, tileY: number) => void;
 export class MapView {
   private readonly app: Application;
   private readonly bank: SpriteBank;
+  private readonly units: Record<string, UnitDef>;
 
   /** Full-viewport sea backdrop so off-map area reads as deep ocean. */
   private readonly backdrop: TilingSprite;
@@ -57,9 +67,10 @@ export class MapView {
 
   onTileClick: TileClickHandler = () => {};
 
-  constructor(app: Application, bank: SpriteBank) {
+  constructor(app: Application, bank: SpriteBank, units: Record<string, UnitDef>) {
     this.app = app;
     this.bank = bank;
+    this.units = units;
 
     const ocean = bank.terrain.textures['ocean'] ?? Texture.WHITE;
     this.backdrop = new TilingSprite({ texture: ocean, width: 100, height: 100 });
@@ -97,12 +108,37 @@ export class MapView {
 
   // --- Entities ------------------------------------------------------------
 
-  /** Rebuilds cities, units, labels, and the selection highlight for a plane. */
-  syncEntities(state: GameState, plane: PlaneId, selected: Selection | null): void {
+  /** Rebuilds cities, units, lairs, labels, and the selection highlight. */
+  syncEntities(
+    state: GameState,
+    plane: PlaneId,
+    selected: Selection | null,
+    lairs: MapLair[] = [],
+    selectedLairId: string | null = null,
+  ): void {
     this.entityLayer.removeChildren();
     this.labelLayer.removeChildren();
     this.labelAnchors = [];
     this.highlight.clear();
+
+    // Lairs (drawn first, under cities/units).
+    for (const lair of lairs) {
+      if (lair.plane !== plane) continue;
+      const tex = this.bank.lair.textures['lair'] ?? Texture.WHITE;
+      const s = new Sprite(tex);
+      s.anchor.set(0.5, 0.5);
+      s.x = lair.x * TILE + TILE / 2;
+      s.y = lair.y * TILE + TILE / 2;
+      if (lair.cleared) {
+        // Cleared lairs read as a faded ruin rather than vanishing.
+        s.alpha = 0.35;
+        s.tint = 0x8a8a8a;
+      }
+      this.entityLayer.addChild(s);
+      if (selectedLairId && lair.id === selectedLairId) {
+        this.drawHighlight(lair.x, lair.y, 0xff9a6a);
+      }
+    }
 
     // Cities (drawn under units so a garrison stays visible).
     for (const city of state.cities) {
@@ -136,8 +172,9 @@ export class MapView {
     // Units (on top).
     for (const unit of state.units) {
       if (unit.plane !== plane) continue;
-      const drawn = UNIT_SPRITE_MAP[unit.defId] ?? 'settler';
-      const tex = this.bank.units.textures[drawn] ?? Texture.WHITE;
+      const def = this.units[unit.defId];
+      const drawn = def ? battleSpriteFor(def) : 'swordsman';
+      const tex = this.bank.battle.textures[drawn] ?? Texture.WHITE;
       const s = new Sprite(tex);
       s.anchor.set(0.5, 0.5);
       s.x = unit.x * TILE + TILE / 2;

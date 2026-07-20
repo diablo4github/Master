@@ -2,15 +2,22 @@
  * The single UI state store.
  *
  * Holds the authoritative GameState plus view-only UI state (current screen,
- * selection, active plane, camera intent, toasts). All sim mutation flows
- * through `command()`, which calls `applyCommand` and turns thrown errors into
- * toasts — views never call the sim directly. A subscribe/notify loop lets
- * views re-render on any change.
+ * selection, active plane, camera intent, battle-viewer state, toasts). All sim
+ * mutation flows through `command()`, which calls `applyCommand` and turns
+ * thrown errors into toasts — views never call the sim directly. A
+ * subscribe/notify loop lets views re-render on any change.
  */
 
 import type { GameState, GameContent } from '@sim/core/state';
 import type { PlaneId } from '@sim/types';
 import { applyCommand, type Command } from '@sim/core/turn';
+import {
+  gameBattles,
+  gameLairs,
+  battleInvolves,
+  type BattleRecord,
+  type LairState,
+} from './battleTypes';
 
 export interface Selection {
   kind: 'city' | 'unit';
@@ -29,10 +36,18 @@ export interface UiState {
   humanPlayerId: string;
   activePlane: PlaneId;
   selected: Selection | null;
+  /** Lair the lair panel is showing, or null. */
+  selectedLairId: string | null;
   /** Unit id awaiting a move-target click, or null. */
   moveMode: string | null;
   /** Whether the research overlay is open. */
   showResearch: boolean;
+  /** Whether the battle-log list overlay is open. */
+  showBattleLog: boolean;
+  /** Battle currently being replayed full-screen, or null. */
+  viewerBattle: BattleRecord | null;
+  /** Ids of battles already prompted (Watch or Skip chosen). */
+  watchedBattleIds: string[];
   toasts: Toast[];
   /** Tile the map view should recentre on (consumed by the view), or null. */
   centerRequest: { x: number; y: number } | null;
@@ -46,6 +61,14 @@ export class Store {
   private listeners = new Set<Listener>();
   private nextToastId = 1;
 
+  /**
+   * Dev/smoke-only overlays: battles and lairs injected outside the sim so the
+   * viewer flow can be exercised before the sim's `game.lairs`/`game.battles`
+   * fields are merged. Empty in a real game once the sim provides them.
+   */
+  private devBattles: BattleRecord[] = [];
+  private devLairs: LairState[] = [];
+
   constructor(content: GameContent) {
     this.content = content;
     this.state = {
@@ -54,8 +77,12 @@ export class Store {
       humanPlayerId: 'player-0',
       activePlane: 'meridia',
       selected: null,
+      selectedLairId: null,
       moveMode: null,
       showResearch: false,
+      showBattleLog: false,
+      viewerBattle: null,
+      watchedBattleIds: [],
       toasts: [],
       centerRequest: null,
     };
@@ -79,14 +106,20 @@ export class Store {
 
   startGame(game: GameState, humanPlayerId: string, activePlane: PlaneId): void {
     const capital = game.cities.find((c) => c.owner === humanPlayerId) ?? null;
+    this.devBattles = [];
+    this.devLairs = [];
     this.set({
       screen: 'game',
       game,
       humanPlayerId,
       activePlane,
       selected: null,
+      selectedLairId: null,
       moveMode: null,
       showResearch: false,
+      showBattleLog: false,
+      viewerBattle: null,
+      watchedBattleIds: [],
       centerRequest: capital ? { x: capital.x, y: capital.y } : null,
     });
   }
@@ -95,11 +128,15 @@ export class Store {
 
   setActivePlane(plane: PlaneId): void {
     if (plane === this.state.activePlane) return;
-    this.set({ activePlane: plane, selected: null, moveMode: null });
+    this.set({ activePlane: plane, selected: null, selectedLairId: null, moveMode: null });
   }
 
   select(sel: Selection | null): void {
-    this.set({ selected: sel, moveMode: null });
+    this.set({ selected: sel, selectedLairId: null, moveMode: null });
+  }
+
+  selectLair(id: string | null): void {
+    this.set({ selectedLairId: id, selected: null, moveMode: null, showResearch: false });
   }
 
   setMoveMode(unitId: string | null): void {
@@ -126,6 +163,83 @@ export class Store {
 
   dismissToast(id: number): void {
     this.set({ toasts: this.state.toasts.filter((t) => t.id !== id) });
+  }
+
+  // --- Battles & lairs -----------------------------------------------------
+
+  /** All battle records: the sim's plus any dev/smoke-injected ones. */
+  allBattles(): BattleRecord[] {
+    const game = this.state.game;
+    const sim = game ? gameBattles(game) : [];
+    return [...sim, ...this.devBattles];
+  }
+
+  /** All lairs: the sim's plus any dev/smoke-injected ones. */
+  allLairs(): LairState[] {
+    const game = this.state.game;
+    const sim = game ? gameLairs(game) : [];
+    return [...sim, ...this.devLairs];
+  }
+
+  /**
+   * The battle that should currently be prompting the player with a
+   * Watch/Skip summary card: the most recent battle involving the human that
+   * hasn't been acknowledged yet. Null when nothing is pending.
+   */
+  pendingBattle(): BattleRecord | null {
+    const st = this.state;
+    if (st.viewerBattle || st.showBattleLog) return null;
+    const watched = new Set(st.watchedBattleIds);
+    const battles = this.allBattles();
+    for (let i = battles.length - 1; i >= 0; i--) {
+      const rec = battles[i];
+      if (rec && battleInvolves(rec, st.humanPlayerId) && !watched.has(rec.id)) {
+        return rec;
+      }
+    }
+    return null;
+  }
+
+  private markWatched(id: string): string[] {
+    return this.state.watchedBattleIds.includes(id)
+      ? this.state.watchedBattleIds
+      : [...this.state.watchedBattleIds, id];
+  }
+
+  /** Dismiss the pending prompt without watching. */
+  skipBattle(rec: BattleRecord): void {
+    this.set({ watchedBattleIds: this.markWatched(rec.id) });
+  }
+
+  /** Open the full-screen replay for a battle (also marks it acknowledged). */
+  watchBattle(rec: BattleRecord): void {
+    this.set({
+      viewerBattle: rec,
+      watchedBattleIds: this.markWatched(rec.id),
+      showBattleLog: false,
+      showResearch: false,
+    });
+  }
+
+  closeViewer(): void {
+    this.set({ viewerBattle: null });
+  }
+
+  toggleBattleLog(open?: boolean): void {
+    const next = open ?? !this.state.showBattleLog;
+    this.set({ showBattleLog: next, showResearch: next ? false : this.state.showResearch });
+  }
+
+  /** Dev/smoke: inject a battle record so the prompt + viewer flow can run. */
+  injectDevBattle(rec: BattleRecord): void {
+    this.devBattles = [...this.devBattles, rec];
+    this.set({}); // notify
+  }
+
+  /** Dev/smoke: inject a lair so it renders on the map. */
+  injectDevLair(lair: LairState): void {
+    this.devLairs = [...this.devLairs, lair];
+    this.set({});
   }
 
   // --- Sim mutation --------------------------------------------------------
