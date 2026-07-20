@@ -1,0 +1,21 @@
+{
+  "cellSize": 32,
+  "columns": 8,
+  "entries": [
+    {
+      "id": "temple-tier-1",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "temple-tier-3",
+      "x": 32,
+      "y": 0
+    },
+    {
+      "id": "temple-tier-5",
+      "x": 64,
+      "y": 0
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "cellSize": 16,
+  "columns": 8,
+  "entries": [
+    {
+      "id": "orc-warrior",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "human-spearman",
+      "x": 16,
+      "y": 0
+    },
+    {
+      "id": "skeleton",
+      "x": 32,
+      "y": 0
+    },
+    {
+      "id": "angel",
+      "x": 48,
+      "y": 0
+    }
+  ]
+}

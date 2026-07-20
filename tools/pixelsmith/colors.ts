@@ -57,8 +57,8 @@ export const SAND = {
 };
 
 export const SWAMP = {
-  mid: '#4d5b3a',
-  dark: '#33401f',
+  mid: '#5f7048',
+  dark: '#3d4a2a',
   muck: '#2a3323',
   sick: '#7a8f45',
 };

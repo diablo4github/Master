@@ -3,13 +3,13 @@
 // of a shape, shadow chars on the bottom/right faces, matching the terrain
 // and building sprites for a consistent overall look.
 import type { Sprite } from '../sprite';
-import { fillRect, makeGrid, setPixel, toRows, type Grid } from '../pixels';
+import { compileSprite, fillRect, makeGrid, setPixel, type Grid } from '../pixels';
 import { DEATH, EARTH, FOREST, LIFE, METAL, OUTLINE, SKIN, WATER } from '../colors';
 
 const SIZE = 16;
 
-function unit(id: string, palette: Record<string, string>, grid: Grid): Sprite {
-  return { id, size: SIZE, palette, rows: toRows(grid) };
+function unit(id: string, colors: Record<string, string>, grid: Grid): Sprite {
+  return compileSprite(id, SIZE, grid, colors);
 }
 
 function orcWarrior(): Sprite {

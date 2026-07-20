@@ -3,6 +3,13 @@
 // grids. Building grids in code (rather than literal strings) makes the
 // dimensions self-correct (a Grid is always exactly `size` x `size`) and
 // lets tile textures use a deterministic ordered dither instead of noise.
+//
+// Grid cells hold readable multi-character *labels* (e.g. 'skin-light',
+// 'roof-dark') rather than raw palette characters — a Sprite's `rows`
+// format requires exactly one character per pixel, which is too cramped to
+// author directly. compileSprite() below does the label -> single-char
+// assignment as a final step.
+import type { Sprite, SpriteSize } from './sprite';
 
 export type Grid = string[][];
 
@@ -11,9 +18,56 @@ export function makeGrid(size: number, fill = '.'): Grid {
   return Array.from({ length: size }, () => Array<string>(size).fill(fill));
 }
 
-/** Convert a Grid into the `rows: string[]` shape a Sprite expects. */
+/** Convert a Grid into the `rows: string[]` shape a Sprite expects. Only
+ * valid if every cell is already a single character — see compileSprite()
+ * for the normal path, which handles multi-character labels. */
 export function toRows(grid: Grid): string[] {
   return grid.map((row) => row.join(''));
+}
+
+// Pool of distinct single characters available to compileSprite for
+// auto-assigning to grid labels. '.' is reserved for transparent (per the
+// Sprite format) so it's deliberately excluded.
+const PALETTE_CHAR_POOL = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+/**
+ * Compile a labeled Grid into a Sprite: every distinct non-'.' label gets
+ * a single auto-assigned character, and `colors` supplies the hex color
+ * for each label used. This is the normal way to turn a Grid built with
+ * fillRect/setPixel/plot/ditherRect into a Sprite, since those helpers
+ * store whatever label string you pass them, not single characters.
+ */
+export function compileSprite(id: string, size: SpriteSize, grid: Grid, colors: Record<string, string>): Sprite {
+  const labelToChar = new Map<string, string>();
+  let next = 0;
+
+  const rows = grid.map((row) =>
+    row
+      .map((label) => {
+        if (label === '.') return '.';
+        let ch = labelToChar.get(label);
+        if (ch === undefined) {
+          if (!(label in colors)) {
+            throw new Error(`compileSprite '${id}': label '${label}' has no entry in colors`);
+          }
+          if (next >= PALETTE_CHAR_POOL.length) {
+            throw new Error(`compileSprite '${id}': ran out of distinct palette characters`);
+          }
+          ch = PALETTE_CHAR_POOL[next]!;
+          next += 1;
+          labelToChar.set(label, ch);
+        }
+        return ch;
+      })
+      .join(''),
+  );
+
+  const palette: Record<string, string> = {};
+  for (const [label, ch] of labelToChar) {
+    palette[ch] = colors[label]!;
+  }
+
+  return { id, size, palette, rows };
 }
 
 /** Set a single pixel. Out-of-bounds coordinates are silently ignored, so

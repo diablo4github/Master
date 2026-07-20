@@ -3,13 +3,13 @@
 // Dithers are keyed on absolute in-tile coordinates, so the texture stays
 // continuous when tiles are placed edge-to-edge — no border vignettes.
 import type { Sprite } from '../sprite';
-import { ditherRect, fillRect, makeGrid, plot, setPixel, toRows, type Grid } from '../pixels';
+import { compileSprite, ditherRect, fillRect, makeGrid, plot, setPixel, type Grid } from '../pixels';
 import { DEATH, EARTH, FOREST, GRASS, LIFE, SAND, SNOW, STONE, SWAMP, WATER } from '../colors';
 
 const SIZE = 16;
 
-function tile(id: string, palette: Record<string, string>, grid: Grid): Sprite {
-  return { id, size: SIZE, palette, rows: toRows(grid) };
+function tile(id: string, colors: Record<string, string>, grid: Grid): Sprite {
+  return compileSprite(id, SIZE, grid, colors);
 }
 
 function grassland(): Sprite {

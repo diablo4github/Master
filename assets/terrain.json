@@ -1,0 +1,71 @@
+{
+  "cellSize": 16,
+  "columns": 8,
+  "entries": [
+    {
+      "id": "grassland",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "forest",
+      "x": 16,
+      "y": 0
+    },
+    {
+      "id": "hills",
+      "x": 32,
+      "y": 0
+    },
+    {
+      "id": "mountains",
+      "x": 48,
+      "y": 0
+    },
+    {
+      "id": "ocean",
+      "x": 64,
+      "y": 0
+    },
+    {
+      "id": "shore",
+      "x": 80,
+      "y": 0
+    },
+    {
+      "id": "desert",
+      "x": 96,
+      "y": 0
+    },
+    {
+      "id": "swamp",
+      "x": 112,
+      "y": 0
+    },
+    {
+      "id": "ashen-waste",
+      "x": 0,
+      "y": 16
+    },
+    {
+      "id": "bonefield",
+      "x": 16,
+      "y": 16
+    },
+    {
+      "id": "gloom-forest",
+      "x": 32,
+      "y": 16
+    },
+    {
+      "id": "radiant-plain",
+      "x": 48,
+      "y": 16
+    },
+    {
+      "id": "crystal-forest",
+      "x": 64,
+      "y": 16
+    }
+  ]
+}

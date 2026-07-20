@@ -5,13 +5,13 @@
 // buttresses, gargoyles, or dark stone). Light source is top-left, matching
 // every other sprite set in the pipeline.
 import type { Sprite } from '../sprite';
-import { fillRect, makeGrid, plot, setPixel, toRows, type Grid } from '../pixels';
+import { compileSprite, fillRect, makeGrid, plot, setPixel, type Grid } from '../pixels';
 import { LIFE, STONE } from '../colors';
 
 const SIZE = 32;
 
-function building(id: string, palette: Record<string, string>, grid: Grid): Sprite {
-  return { id, size: SIZE, palette, rows: toRows(grid) };
+function building(id: string, colors: Record<string, string>, grid: Grid): Sprite {
+  return compileSprite(id, SIZE, grid, colors);
 }
 
 /** A symmetric gable roof: a triangle of `chBody`, apex at (apexX, apexY),
