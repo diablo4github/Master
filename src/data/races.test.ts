@@ -136,4 +136,11 @@ describe('buildings', () => {
       expect(building.id).toBe(key);
     }
   });
+
+  it('gives every building a non-empty structured effects object', () => {
+    for (const building of Object.values(BUILDINGS)) {
+      const fieldCount = Object.keys(building.effects).length;
+      expect(fieldCount, `${building.id} has no effects fields`).toBeGreaterThan(0);
+    }
+  });
 });
