@@ -123,7 +123,7 @@ describe('production tick', () => {
     expect(spawned.x).toBe(city.x);
     expect(spawned.y).toBe(city.y);
     expect(spawned.moves).toBe(1); // militia moves
-    expect(spawned.hp).toBe(4); // militia hits
+    expect(spawned.hp).toBe(18); // militia figures 6 × hits 3
   });
 
   it('accumulates production across turns before completing', () => {

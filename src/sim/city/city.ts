@@ -435,7 +435,7 @@ export function spawnUnit(
     x,
     y,
     moves: def.moves,
-    hp: def.hits,
+    hp: def.combat.figures * def.combat.hits,
   };
   state.units.push(unit);
   return unit;
