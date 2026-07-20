@@ -20,6 +20,8 @@ import {
   tickGrowth,
   buildBlockReason,
   foundCity,
+  mintEntityId,
+  QUEUE_CAP,
 } from '../city/city';
 import { findPath, MOVE_COSTS } from '../units/units';
 import { getTile, type Tile } from '../map/tiles';
@@ -29,9 +31,18 @@ import { resolveStacks, type StackUnit } from '../combat/resolve';
 /** Commands a player (human or AI) can issue against the sim. */
 export type Command =
   | { type: 'end-turn' }
-  | { type: 'set-build'; cityId: string; order: { kind: 'building' | 'unit'; id: string } }
+  // Production queue (replaces the old single set-build):
+  | { type: 'queue-build'; cityId: string; order: { kind: 'building' | 'unit'; id: string } }
+  | { type: 'dequeue-build'; cityId: string; index: number }
+  | { type: 'reorder-build'; cityId: string; from: number; to: number }
+  // Units & armies:
   | { type: 'move-unit'; unitId: string; to: { x: number; y: number } }
-  | { type: 'found-city'; unitId: string; name: string }
+  | { type: 'form-army'; unitIds: string[] }
+  | { type: 'join-army'; armyId: string; unitIds: string[] }
+  | { type: 'leave-army'; unitIds: string[] }
+  | { type: 'move-army'; armyId: string; to: { x: number; y: number } }
+  // City & research:
+  | { type: 'found-city'; unitId: string; name?: string }
   | { type: 'set-research'; studyId: string };
 
 function requirePlayer(state: GameState, playerId: string) {
@@ -65,14 +76,54 @@ export function applyCommand(
     case 'end-turn':
       return advanceTurn(state, content);
 
-    case 'set-build': {
+    case 'queue-build': {
       const next = structuredClone(state);
       requirePlayer(next, playerId);
       const city = requireOwnedCity(next, playerId, cmd.cityId);
-      const reason = buildBlockReason(next, content, city, cmd.order.kind, cmd.order.id);
+      if (city.buildQueue.length >= QUEUE_CAP) {
+        throw new Error(`${city.name}'s build queue is full (max ${QUEUE_CAP})`);
+      }
+      if (city.buildQueue.some((o) => o.id === cmd.order.id)) {
+        throw new Error(`'${cmd.order.id}' is already queued in ${city.name}`);
+      }
+      // Loose queue-time validation: a building whose prerequisite is queued
+      // EARLIER counts as available. Race/study legality is still enforced.
+      const availableBuildings = [
+        ...city.buildings,
+        ...city.buildQueue.filter((o) => o.kind === 'building').map((o) => o.id),
+      ];
+      const reason = buildBlockReason(next, content, city, cmd.order.kind, cmd.order.id, {
+        availableBuildings,
+      });
       if (reason) throw new Error(reason);
-      // Queue is length-1 this milestone: setting a build replaces the head.
-      city.buildQueue = [{ kind: cmd.order.kind, id: cmd.order.id, progress: 0 }];
+      city.buildQueue.push({ kind: cmd.order.kind, id: cmd.order.id, progress: 0 });
+      return next;
+    }
+
+    case 'dequeue-build': {
+      const next = structuredClone(state);
+      requirePlayer(next, playerId);
+      const city = requireOwnedCity(next, playerId, cmd.cityId);
+      if (cmd.index < 0 || cmd.index >= city.buildQueue.length) {
+        throw new Error(`No queue entry at index ${cmd.index} in ${city.name}`);
+      }
+      city.buildQueue.splice(cmd.index, 1);
+      return next;
+    }
+
+    case 'reorder-build': {
+      const next = structuredClone(state);
+      requirePlayer(next, playerId);
+      const city = requireOwnedCity(next, playerId, cmd.cityId);
+      const len = city.buildQueue.length;
+      if (cmd.from < 0 || cmd.from >= len) {
+        throw new Error(`No queue entry at index ${cmd.from} in ${city.name}`);
+      }
+      if (cmd.to < 0 || cmd.to >= len) {
+        throw new Error(`Cannot move queue entry to index ${cmd.to} in ${city.name}`);
+      }
+      const [moved] = city.buildQueue.splice(cmd.from, 1);
+      if (moved) city.buildQueue.splice(cmd.to, 0, moved);
       return next;
     }
 
@@ -82,7 +133,30 @@ export function applyCommand(
       const unit = requireOwnedUnit(next, playerId, cmd.unitId);
       const map = next.maps[unit.plane];
       if (!map) throw new Error(`No map for plane '${unit.plane}'`);
+      // Moving a single unit out of its army DETACHES it: it leaves the army
+      // and moves alone, and the army disbands if only one member remains.
+      if (unit.armyId !== undefined) {
+        const leftArmy = unit.armyId;
+        delete unit.armyId;
+        cleanupArmies(next, leftArmy);
+      }
       moveUnitWithBattles(next, content, unit, cmd.to.x, cmd.to.y);
+      return next;
+    }
+
+    case 'form-army':
+      return formArmy(structuredClone(state), playerId, cmd.unitIds);
+
+    case 'join-army':
+      return joinArmy(structuredClone(state), playerId, cmd.armyId, cmd.unitIds);
+
+    case 'leave-army':
+      return leaveArmy(structuredClone(state), playerId, cmd.unitIds);
+
+    case 'move-army': {
+      const next = structuredClone(state);
+      requirePlayer(next, playerId);
+      moveArmyWithBattles(next, content, playerId, cmd.armyId, cmd.to.x, cmd.to.y);
       return next;
     }
 
@@ -94,10 +168,9 @@ export function applyCommand(
       if (!def || def.role !== 'settler') {
         throw new Error(`Unit '${cmd.unitId}' cannot found a city`);
       }
-      if (!cmd.name || cmd.name.trim().length === 0) {
-        throw new Error('A new city needs a name');
-      }
-      // foundCity validates terrain and spacing, throwing on any violation.
+      // Name is optional: absent/blank auto-draws the next themed race name;
+      // a player-typed name is used as-is. foundCity validates terrain and
+      // spacing, throwing on any violation.
       foundCity(next, content, playerId, player.setup.raceId, unit.plane, unit.x, unit.y, cmd.name);
       // Consume the settler.
       next.units = next.units.filter((u) => u.id !== cmd.unitId);
@@ -288,6 +361,159 @@ function toStack(content: GameContent, units: readonly UnitState[]): StackUnit[]
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Armies: units that move and fight as one
+// ---------------------------------------------------------------------------
+
+/** Live members of an army, in stable state order. */
+function armyMembers(state: GameState, armyId: string): UnitState[] {
+  return state.units.filter((u) => u.armyId === armyId);
+}
+
+/**
+ * Disbands any army that has dropped to one or zero members (its last member's
+ * armyId is cleared). Pass a specific `armyId` to check just that army, or omit
+ * to sweep every army — used after battle casualties, where an army may lose
+ * members. An army is only ever a subset of a single owner's co-located stack.
+ */
+function cleanupArmies(state: GameState, armyId?: string): void {
+  const ids = new Set<string>();
+  for (const u of state.units) {
+    if (u.armyId === undefined) continue;
+    if (armyId === undefined || u.armyId === armyId) ids.add(u.armyId);
+  }
+  for (const id of ids) {
+    const members = armyMembers(state, id);
+    if (members.length <= 1) {
+      for (const m of members) delete m.armyId;
+    }
+  }
+}
+
+/** form-army: groups ≥2 co-located, army-free, same-owner units into a new army. */
+function formArmy(state: GameState, playerId: string, unitIds: string[]): GameState {
+  requirePlayer(state, playerId);
+  if (unitIds.length < 2) throw new Error('An army needs at least 2 units');
+  if (new Set(unitIds).size !== unitIds.length) throw new Error('Duplicate unit in army');
+  if (unitIds.length > STACK_CAP) {
+    throw new Error(`An army may hold at most ${STACK_CAP} units`);
+  }
+
+  const units = unitIds.map((id) => requireOwnedUnit(state, playerId, id));
+  const first = units[0]!;
+  for (const u of units) {
+    if (u.armyId !== undefined) throw new Error(`Unit '${u.id}' is already in an army`);
+    if (u.plane !== first.plane || u.x !== first.x || u.y !== first.y) {
+      throw new Error('All units in an army must start on the same tile');
+    }
+  }
+
+  const armyId = mintEntityId(state, 'army');
+  for (const u of units) u.armyId = armyId;
+  return state;
+}
+
+/** join-army: adds co-located, army-free units to an existing army. */
+function joinArmy(state: GameState, playerId: string, armyId: string, unitIds: string[]): GameState {
+  requirePlayer(state, playerId);
+  const members = armyMembers(state, armyId);
+  if (members.length === 0) throw new Error(`Unknown army '${armyId}'`);
+  const anchor = members[0]!;
+  if (anchor.owner !== playerId) throw new Error(`Army '${armyId}' is not owned by ${playerId}`);
+  if (new Set(unitIds).size !== unitIds.length) throw new Error('Duplicate unit in join');
+
+  const units = unitIds.map((id) => requireOwnedUnit(state, playerId, id));
+  for (const u of units) {
+    if (u.armyId !== undefined) throw new Error(`Unit '${u.id}' is already in an army`);
+    if (u.plane !== anchor.plane || u.x !== anchor.x || u.y !== anchor.y) {
+      throw new Error(`Unit '${u.id}' is not with army '${armyId}'`);
+    }
+  }
+  if (members.length + units.length > STACK_CAP) {
+    throw new Error(`An army may hold at most ${STACK_CAP} units`);
+  }
+
+  for (const u of units) u.armyId = armyId;
+  return state;
+}
+
+/** leave-army: detaches units from their army, disbanding a stub remnant. */
+function leaveArmy(state: GameState, playerId: string, unitIds: string[]): GameState {
+  requirePlayer(state, playerId);
+  const affected = new Set<string>();
+  for (const id of unitIds) {
+    const unit = requireOwnedUnit(state, playerId, id);
+    if (unit.armyId === undefined) throw new Error(`Unit '${id}' is not in an army`);
+    affected.add(unit.armyId);
+    delete unit.armyId;
+  }
+  for (const armyId of affected) cleanupArmies(state, armyId);
+  return state;
+}
+
+/**
+ * Moves a whole army toward (tx, ty) as one perfectly-stacked group. The army
+ * advances tile by tile at the SLOWEST member's remaining movement (a step is
+ * taken only while every member still has movement left, then the tile's cost
+ * is deducted from each member). Stacking cap and hostile-tile battles work
+ * exactly as for a single unit: reaching a tile adjacent to a live lair (or
+ * enemy stack) halts the march and resolves a battle whose attacker side is
+ * every same-owner unit co-located with the army. Mutates `state` in place.
+ */
+function moveArmyWithBattles(
+  state: GameState,
+  content: GameContent,
+  playerId: string,
+  armyId: string,
+  tx: number,
+  ty: number,
+): void {
+  const members = armyMembers(state, armyId);
+  if (members.length === 0) throw new Error(`Unknown army '${armyId}'`);
+  const anchor = members[0]!;
+  if (anchor.owner !== playerId) throw new Error(`Army '${armyId}' is not owned by ${playerId}`);
+
+  const map = state.maps[anchor.plane];
+  if (!map) throw new Error(`No map for plane '${anchor.plane}'`);
+
+  const path = findPath(map, anchor.x, anchor.y, tx, ty);
+  if (path === null) throw new Error(`No path for army '${armyId}' to (${tx}, ${ty})`);
+
+  const slowest = () => members.reduce((m, u) => Math.min(m, u.moves), Infinity);
+
+  for (let i = 1; i < path.length; i++) {
+    if (slowest() <= 0) break;
+    const step = path[i]!;
+
+    // Hostile tile: fight from the current tile with the full co-located stack.
+    const lair = lairAt(state, anchor.plane, step.x, step.y);
+    const enemies = lair ? [] : enemyUnitsAt(state, anchor.owner, anchor.plane, step.x, step.y);
+    if (lair || enemies.length > 0) {
+      const stackMates = stackAt(state, anchor.owner, anchor.plane, anchor.x, anchor.y);
+      resolveBattle(state, content, anchor, stackMates, step.x, step.y, lair, enemies);
+      for (const u of members) u.moves = 0;
+      return;
+    }
+
+    // Friendly stacking cap: army members plus prior occupants must fit.
+    const occupants = stackAt(state, anchor.owner, anchor.plane, step.x, step.y).filter(
+      (u) => u.armyId !== armyId,
+    );
+    if (occupants.length + members.length > STACK_CAP) {
+      throw new Error(
+        `Cannot move army '${armyId}' into (${step.x}, ${step.y}): stack is full (max ${STACK_CAP} units)`,
+      );
+    }
+
+    const cost = MOVE_COSTS[(getTile(map, step.x, step.y) as Tile).terrain];
+    for (const u of members) {
+      u.x = step.x;
+      u.y = step.y;
+      u.moves = Math.max(0, u.moves - cost);
+    }
+  }
+}
+
 /**
  * Moves `unit` toward (tx, ty) along the A* path, honouring three rules:
  *  - Stacking: it may never step onto a tile already holding STACK_CAP
@@ -445,6 +671,9 @@ function resolveBattle(
       }
     }
   }
+
+  // Battle deaths may thin an army below two members — disband any stub.
+  cleanupArmies(state);
 
   state.battles.push({
     id: battleId,

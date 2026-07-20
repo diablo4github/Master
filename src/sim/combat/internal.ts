@@ -13,7 +13,7 @@
 import type { UnitDef, AbilityDef, PlaneId } from '../types';
 import type { TerrainId } from '../map/tiles';
 import type { Rng } from '../core/rng';
-import type { BattleEvent } from './events';
+import type { BattleEvent, MoraleTrigger } from './events';
 
 export type Side = 'attacker' | 'defender';
 
@@ -24,7 +24,52 @@ export type Side = 'attacker' | 'defender';
 
 export const BATTLE_WIDTH = 20;
 export const BATTLE_HEIGHT = 14;
-export const MAX_TICKS = 200;
+/**
+ * Tick cap. Regiment-scale battles GRIND: only the fighting front of a
+ * formation trades blows each tick (see frontage below), so a decisive fight
+ * runs ~15-60 ticks and even a stubborn one stays well under this cap. Raised
+ * from the old 6-figure-squad value (200) to leave head-room for big lines.
+ */
+export const MAX_TICKS = 400;
+
+// ---------------------------------------------------------------------------
+// FRONTAGE — the heart of regiment-scale realism.
+//
+// A 400-man regiment cannot all strike at once: it fights across a FRONT. Each
+// tick, a melee exchange engages only the figures that can physically bring a
+// weapon to bear on the contacted face.
+//
+//   engaged = clamp( min(BASE_FRONTAGE, presentedFront(target)) * faceWidth,
+//                    1, attacker.figures )
+//
+//  - BASE_FRONTAGE: how many of the ATTACKER's men fit shoulder-to-shoulder
+//    along one tile-face. A tactical tile is ~this many men wide.
+//  - presentedFront(target): how much of the TARGET is exposed. A formation
+//    fills the whole face (BASE_FRONTAGE). A SINGULAR great monster is one
+//    body — only a mass-scaled crowd of ~10-20 men can hack at one dragon.
+//  - faceWidth: extra contact faces widen the fighting front. A flank contact
+//    wraps a side (+FLANK), a rear contact wraps around (+REAR), a pack-mate
+//    pressing the same prey opens another face (+PACK). MORE ENGAGED FIGURES is
+//    now *why flanking kills* — on top of the existing to-hit/evasion swing.
+//
+// Because only the front trades, casualties accrue a slice at a time and lines
+// grind instead of annihilating in 2-3 exchanges. Ranged fire is NOT frontage-
+// limited (every bow may loose); area effects (breath/trample) reap whole
+// swaths of massed ranks (see abilities.ts).
+// ---------------------------------------------------------------------------
+
+/** Men per tile-face a formation can bring to bear in one melee exchange. */
+export const BASE_FRONTAGE = 50;
+/** Attackers that can crowd ONE point of a lone target's mass (a dragon is big). */
+export const MONSTER_CROWD_PER_MASS = 2;
+/** At least this many men can always gang up on a singular monster. */
+export const MIN_CROWD = 8;
+/** Extra contact-face fraction from a flank / rear / pack-mate. */
+export const FLANK_EXTRA_FACE = 0.5;
+export const REAR_EXTRA_FACE = 1.0;
+export const PACK_EXTRA_FACE = 0.5;
+/** Binomial draws at or below this size are rolled exactly; larger are batched. */
+export const BINOMIAL_EXACT_MAX = 24;
 
 /** To-hit curve. pHit = clamp(BASE + K*(attack - evasion), FLOOR, CEIL). */
 export const HIT_BASE = 0.5;
@@ -56,6 +101,23 @@ export const CHARGE_MOMENTUM_K = 1; // × (mass × speed)
  * no anti-cavalry tag anywhere.
  */
 export const IMPALE_K = 0.2; // × (charger mass × speed), added to the brace strike
+
+/**
+ * Casualty morale at regiment scale is PROPORTIONAL, never per-figure. A unit
+ * tests its nerve at end of tick when either a single tick was bloody
+ * (≥ MORALE_TICK_FRACTION of its start-of-tick strength lost) or cumulative
+ * attrition has crossed the floor. The shock penalty scales with the fraction
+ * lost this tick and with overall depletion — a fresh regiment shrugs off a
+ * skirmish, a half-dead one breaks on far less.
+ */
+export const MORALE_TICK_FRACTION = 0.08; // ≥8% lost in a tick ⇒ nerve check
+export const MORALE_ATTRITION_FLOOR = 0.34; // …or once a third of the unit is gone
+export const CASUALTY_BASE = 6; // flat shock of taking casualties at all
+export const CASUALTY_TICK_K = 110; // × fraction lost THIS tick
+export const CASUALTY_ATTRITION_K = 34; // × overall fraction of the unit lost
+/** Contagion: a rout nearby tests the nerve of allies within this radius. */
+export const ROUT_CONTAGION_RADIUS = 3;
+export const ROUT_CONTAGION_PENALTY = 16;
 
 // ---------------------------------------------------------------------------
 // Geometry — square grid, 8-neighbour, Chebyshev distance (matches the

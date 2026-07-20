@@ -30,9 +30,9 @@ function controlled(): GameState {
 }
 
 describe('applyCommand — happy paths', () => {
-  it('set-build replaces the queue head', () => {
+  it('queue-build appends to the build queue', () => {
     const next = applyCommand(controlled(), CONTENT, 'player-0', {
-      type: 'set-build', cityId: 'city-1', order: { kind: 'unit', id: 'militia' },
+      type: 'queue-build', cityId: 'city-1', order: { kind: 'unit', id: 'militia' },
     });
     expect(next.cities[0]!.buildQueue).toEqual([{ kind: 'unit', id: 'militia', progress: 0 }]);
   });
@@ -79,17 +79,17 @@ describe('applyCommand — failure modes throw clear errors', () => {
     ).toThrow(/Unknown player/);
   });
 
-  it('set-build: unknown city, unowned city, illegal build', () => {
+  it('queue-build: unknown city, unowned city, illegal build', () => {
     const s = controlled();
     s.cities.push(makeCity({ id: 'city-9', owner: 'player-1', raceId: 'orc' }));
     expect(() =>
-      applyCommand(s, CONTENT, 'player-0', { type: 'set-build', cityId: 'ghost', order: { kind: 'unit', id: 'militia' } }),
+      applyCommand(s, CONTENT, 'player-0', { type: 'queue-build', cityId: 'ghost', order: { kind: 'unit', id: 'militia' } }),
     ).toThrow(/Unknown city/);
     expect(() =>
-      applyCommand(s, CONTENT, 'player-0', { type: 'set-build', cityId: 'city-9', order: { kind: 'unit', id: 'militia' } }),
+      applyCommand(s, CONTENT, 'player-0', { type: 'queue-build', cityId: 'city-9', order: { kind: 'unit', id: 'militia' } }),
     ).toThrow(/not owned/);
     expect(() =>
-      applyCommand(s, CONTENT, 'player-0', { type: 'set-build', cityId: 'city-1', order: { kind: 'building', id: 'grand-cathedral' } }),
+      applyCommand(s, CONTENT, 'player-0', { type: 'queue-build', cityId: 'city-1', order: { kind: 'building', id: 'grand-cathedral' } }),
     ).toThrow(/cannot build/i);
   });
 
@@ -101,10 +101,13 @@ describe('applyCommand — failure modes throw clear errors', () => {
     expect(() => applyCommand(s, CONTENT, 'player-0', { type: 'move-unit', unitId: 'unit-1', to: { x: 11, y: 11 } })).toThrow(/No path/);
   });
 
-  it('found-city: non-settler, empty name, invalid site', () => {
+  it('found-city: non-settler, blank name auto-draws, invalid site', () => {
     const s = controlled();
     expect(() => applyCommand(s, CONTENT, 'player-0', { type: 'found-city', unitId: 'unit-2', name: 'X' })).toThrow(/cannot found/);
-    expect(() => applyCommand(s, CONTENT, 'player-0', { type: 'found-city', unitId: 'unit-1', name: '   ' })).toThrow(/needs a name/);
+    // Blank name is no longer an error: it auto-draws the next themed race name.
+    // The existing city is 'Testburg', so the first free orc name is drawn.
+    const drawn = applyCommand(s, CONTENT, 'player-0', { type: 'found-city', unitId: 'unit-1', name: '   ' });
+    expect(drawn.cities.some((c) => c.name === 'Grimfang' && c.x === 8 && c.y === 8)).toBe(true);
     // Move the settler next to the existing city, then founding is too close.
     const moved = structuredClone(s);
     const settler = moved.units.find((u) => u.id === 'unit-1')!;
@@ -180,8 +183,8 @@ function buildScript(game: GameState): { playerId: string; cmd: Command }[] {
   const humanCap = game.cities.find((c) => c.owner === 'player-1')!;
   const script: { playerId: string; cmd: Command }[] = [
     { playerId: 'player-0', cmd: { type: 'set-research', studyId: 'war-drums' } },
-    { playerId: 'player-0', cmd: { type: 'set-build', cityId: 'city-1', order: { kind: 'unit', id: 'militia' } } },
-    { playerId: 'player-1', cmd: { type: 'set-build', cityId: humanCap.id, order: { kind: 'building', id: 'granary' } } },
+    { playerId: 'player-0', cmd: { type: 'queue-build', cityId: 'city-1', order: { kind: 'unit', id: 'militia' } } },
+    { playerId: 'player-1', cmd: { type: 'queue-build', cityId: humanCap.id, order: { kind: 'building', id: 'granary' } } },
     // Move settler to its own tile (always valid) to exercise the command path.
     { playerId: 'player-0', cmd: { type: 'move-unit', unitId: orcSettler.id, to: { x: orcSettler.x, y: orcSettler.y } } },
   ];

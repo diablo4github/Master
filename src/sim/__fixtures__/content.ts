@@ -53,6 +53,7 @@ const ORC: RaceDef = {
   yields: { food: 1, production: 1, gold: 1, research: 1, mana: 1 },
   buildings: ['granary', 'workshop', 'foundry', 'barracks', 'wizard-tower'],
   studies: ['arcane-arts', 'war-drums', 'fertility-rites', 'gold-magic'],
+  cityNames: ['Grimfang', 'Bloodrock', 'Skullcleft', 'Ironmaw', 'Ashgut'],
   description: 'The generic baseline race.',
 };
 
@@ -65,6 +66,7 @@ const HUMAN: RaceDef = {
   schoolAffinity: 'life',
   buildings: ['granary', 'workshop', 'foundry', 'barracks', 'wizard-tower', 'grand-cathedral'],
   studies: ['arcane-arts', 'fertility-rites', 'gold-magic'],
+  cityNames: ['Dawnholt', 'Silverford', 'Highmarch', 'Kingsreach', 'Elmvale'],
   description: 'Life-leaning temple builders.',
 };
 

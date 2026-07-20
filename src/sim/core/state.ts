@@ -241,11 +241,10 @@ export function createGame(settings: GameSettings, content: GameContent): GameSt
     const player = players[i];
     if (!player) return;
     const { plane, x, y } = starts[i] as { plane: PlaneId; x: number; y: number };
-    const race = content.races[setup.raceId];
-    const capitalName = `${race ? race.name : setup.raceId} Capital`;
 
-    // Found the capital immediately.
-    foundCity(state, content, player.id, setup.raceId, plane, x, y, capitalName, CAPITAL_START_POP);
+    // Found the capital immediately. Passing no name auto-draws the first free
+    // themed city name for the player's race (deterministic across the game).
+    foundCity(state, content, player.id, setup.raceId, plane, x, y, undefined, CAPITAL_START_POP);
 
     // Spawn a settler on an adjacent passable, non-peak land tile (falling
     // back to the capital tile itself if the city is entirely hemmed in).

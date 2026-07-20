@@ -303,6 +303,12 @@ function racialUnitGates(content: GameContent, race: RaceDef, unitId: string): s
  * Returns a human-readable reason the given order cannot be built in this
  * city, or null if it is buildable. Used both for boolean checks and to
  * surface clear error messages to the command layer.
+ *
+ * `opts.availableBuildings` overrides the set of building ids treated as
+ * "present" when checking a building's `requires` prerequisite. The queue layer
+ * passes `city.buildings` plus the building orders EARLIER in the queue, so a
+ * building whose prerequisite is queued ahead of it validates at queue time.
+ * Defaults to `city.buildings` (the strict, at-build-time check).
  */
 export function buildBlockReason(
   state: GameState,
@@ -310,16 +316,18 @@ export function buildBlockReason(
   city: CityState,
   kind: 'building' | 'unit',
   id: string,
+  opts?: { availableBuildings?: readonly string[] },
 ): string | null {
   const race = requireRace(content, city.raceId);
   const completed = ownerCompletedStudies(state, city.owner);
+  const available = opts?.availableBuildings ?? city.buildings;
 
   if (kind === 'building') {
     const def = content.buildings[id];
     if (!def) return `Unknown building '${id}'`;
     if (!race.buildings.includes(id)) return `${race.name} cannot build '${def.name}'`;
     if (city.buildings.includes(id)) return `'${def.name}' is already built in ${city.name}`;
-    if (def.requires && !city.buildings.includes(def.requires)) {
+    if (def.requires && !available.includes(def.requires)) {
       const req = content.buildings[def.requires];
       return `'${def.name}' requires '${req ? req.name : def.requires}' first`;
     }
@@ -356,8 +364,11 @@ export function canBuild(state: GameState, content: GameContent, city: CityState
 }
 
 // ---------------------------------------------------------------------------
-// Production tick
+// Production queue
 // ---------------------------------------------------------------------------
+
+/** Maximum number of orders a city may hold in its build queue. */
+export const QUEUE_CAP = 7;
 
 function orderCost(content: GameContent, order: BuildOrder): number {
   if (order.kind === 'building') return content.buildings[order.id]?.cost ?? Infinity;
@@ -368,10 +379,13 @@ function orderCost(content: GameContent, order: BuildOrder): number {
  * Applies one turn of production to the front of a city's build queue,
  * mutating the city (and, on unit completion, spawning a unit into `state`).
  * `productionYield` is the city's already-computed production for the turn.
- * On completion a building is appended to city.buildings, a unit is spawned on
- * the city tile with full moves/hp, the order is removed, and any overflow
- * production carries to the next order (queue is length-1 this milestone, so
- * overflow is effectively discarded when the queue empties).
+ *
+ * The head is ticked; on completion a building is appended to city.buildings or
+ * a unit is spawned on the city tile with full moves/hp, the order is removed,
+ * and any overflow production carries to the next order (rollover). If the head
+ * has become illegal since it was queued (e.g. a building whose prerequisite
+ * was reordered away, or one already completed elsewhere), it is skipped with
+ * no production lost — the carry rolls straight to the next order.
  */
 export function tickProduction(
   state: GameState,
@@ -382,8 +396,17 @@ export function tickProduction(
   if (city.buildQueue.length === 0) return;
   let carry = productionYield;
 
-  while (city.buildQueue.length > 0 && carry > 0) {
+  while (city.buildQueue.length > 0) {
     const order = city.buildQueue[0] as BuildOrder;
+
+    // Skip a head that can no longer legally be built (no carry consumed).
+    if (buildBlockReason(state, content, city, order.kind, order.id) !== null) {
+      city.buildQueue.shift();
+      continue;
+    }
+
+    if (carry <= 0) return; // nothing left to invest into a legal head
+
     order.progress += carry;
     const cost = orderCost(content, order);
     if (order.progress < cost) return; // still building
@@ -400,7 +423,7 @@ export function tickProduction(
         spawnUnit(state, content, city.owner, order.id, city.plane, city.x, city.y);
       }
     }
-    // Loop: any overflow may progress the next order (none this milestone).
+    // Loop: any overflow may progress the next order.
   }
 }
 
@@ -409,10 +432,52 @@ export function tickProduction(
 // ---------------------------------------------------------------------------
 
 /** Mints the next entity id from the deterministic, never-reused counter. */
-export function mintEntityId(state: GameState, prefix: 'city' | 'unit'): string {
+export function mintEntityId(state: GameState, prefix: 'city' | 'unit' | 'army'): string {
   const id = `${prefix}-${state.nextEntityId}`;
   state.nextEntityId += 1;
   return id;
+}
+
+// ---------------------------------------------------------------------------
+// City naming
+// ---------------------------------------------------------------------------
+
+const ROMAN: readonly [number, string][] = [
+  [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+  [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+  [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+];
+
+/** Deterministic Roman numeral for n >= 1 (used for exhausted-list suffixes). */
+function toRoman(n: number): string {
+  let out = '';
+  let rem = n;
+  for (const [value, sym] of ROMAN) {
+    while (rem >= value) {
+      out += sym;
+      rem -= value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Deterministically picks the next unused city name for a race. Draws the first
+ * entry of the race's themed `cityNames` list that no existing city (anywhere in
+ * the game state) already carries. When the whole list is in use, falls back to
+ * numbered variants of the FIRST list name — '<first> II', '<first> III', ... —
+ * taking the first such variant not yet in use. Pure read of `state.cities`.
+ */
+export function pickCityName(state: GameState, race: RaceDef): string {
+  const used = new Set(state.cities.map((c) => c.name));
+  for (const name of race.cityNames) {
+    if (!used.has(name)) return name;
+  }
+  const base = race.cityNames[0] ?? `${race.name} City`;
+  for (let n = 2; ; n++) {
+    const candidate = `${base} ${toRoman(n)}`;
+    if (!used.has(candidate)) return candidate;
+  }
 }
 
 /** Spawns a unit onto the map with full moves and hp, appending it to state. */
@@ -448,6 +513,9 @@ export function spawnUnit(
  * message on any violation. On success a CityState is created (population
  * CAPITAL start unless overridden by the caller — here it starts at 1 for a
  * settled town; the capital path passes its own population) and appended.
+ *
+ * `name` is optional: an absent or blank name draws the next unused themed
+ * name for the founding race via `pickCityName`; a supplied name is used as-is.
  */
 export function foundCity(
   state: GameState,
@@ -457,10 +525,10 @@ export function foundCity(
   plane: PlaneId,
   x: number,
   y: number,
-  name: string,
+  name?: string,
   population = 1,
 ): CityState {
-  requireRace(content, raceId);
+  const race = requireRace(content, raceId);
   const map = state.maps[plane];
   if (!map) throw new Error(`No map for plane '${plane}'`);
   const tile = getTile(map, x, y);
@@ -475,10 +543,12 @@ export function foundCity(
     }
   }
 
+  const cityName = name && name.trim().length > 0 ? name : pickCityName(state, race);
+
   const city: CityState = {
     id: mintEntityId(state, 'city'),
     owner: ownerId,
-    name,
+    name: cityName,
     raceId,
     plane,
     x,

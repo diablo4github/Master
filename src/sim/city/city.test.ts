@@ -129,12 +129,13 @@ describe('production tick', () => {
   it('accumulates production across turns before completing', () => {
     const state = grasslandState();
     const city = state.cities[0]!;
-    city.buildQueue = [{ kind: 'building', id: 'foundry', progress: 0 }]; // cost 40
+    // barracks has no prerequisite and no study gate, so it stays legal as head.
+    city.buildQueue = [{ kind: 'building', id: 'barracks', progress: 0 }]; // cost 30
     tickProduction(state, CONTENT, city, 15);
-    expect(city.buildings).not.toContain('foundry');
+    expect(city.buildings).not.toContain('barracks');
     expect(city.buildQueue[0]!.progress).toBe(15);
-    tickProduction(state, CONTENT, city, 30); // 45 >= 40
-    expect(city.buildings).toContain('foundry');
+    tickProduction(state, CONTENT, city, 20); // 35 >= 30
+    expect(city.buildings).toContain('barracks');
   });
 });
 
