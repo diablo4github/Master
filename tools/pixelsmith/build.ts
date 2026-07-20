@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { encodePng } from './png';
 import { packSheet } from './sheet';
 import type { Sprite } from './sprite';
+import { BATTLE_SPRITES, LAIR_SPRITES } from './sprites/battle';
 import { BUILDING_SPRITES } from './sprites/buildings';
 import { CITY_SPRITES } from './sprites/cities';
 import { TERRAIN_SPRITES } from './sprites/terrain';
@@ -26,6 +27,12 @@ const SHEETS: SheetSpec[] = [
   { name: 'units', cellSize: 16, sprites: UNIT_SPRITES },
   { name: 'buildings', cellSize: 32, sprites: BUILDING_SPRITES },
   { name: 'cities', cellSize: 24, sprites: CITY_SPRITES },
+  { name: 'battle', cellSize: 16, sprites: BATTLE_SPRITES },
+  // The lair marker is 24x24 (a strategic-map sprite, not a battle
+  // archetype) so it can't share the 16px 'battle' sheet above — see the
+  // comment on LAIR_SPRITES in sprites/battle.ts for why it gets its own
+  // sheet instead of folding into 'cities'.
+  { name: 'lair', cellSize: 24, sprites: LAIR_SPRITES },
 ];
 
 /**

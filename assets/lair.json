@@ -1,0 +1,11 @@
+{
+  "cellSize": 24,
+  "columns": 8,
+  "entries": [
+    {
+      "id": "lair",
+      "x": 0,
+      "y": 0
+    }
+  ]
+}

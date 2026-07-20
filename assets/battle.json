@@ -1,0 +1,76 @@
+{
+  "cellSize": 16,
+  "columns": 8,
+  "entries": [
+    {
+      "id": "spearman",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "swordsman",
+      "x": 16,
+      "y": 0
+    },
+    {
+      "id": "archer",
+      "x": 32,
+      "y": 0
+    },
+    {
+      "id": "crossbowman",
+      "x": 48,
+      "y": 0
+    },
+    {
+      "id": "cavalry",
+      "x": 64,
+      "y": 0
+    },
+    {
+      "id": "brute",
+      "x": 80,
+      "y": 0
+    },
+    {
+      "id": "swarm",
+      "x": 96,
+      "y": 0
+    },
+    {
+      "id": "skirmisher",
+      "x": 112,
+      "y": 0
+    },
+    {
+      "id": "flyer",
+      "x": 0,
+      "y": 16
+    },
+    {
+      "id": "mage",
+      "x": 16,
+      "y": 16
+    },
+    {
+      "id": "undead",
+      "x": 32,
+      "y": 16
+    },
+    {
+      "id": "celestial",
+      "x": 48,
+      "y": 16
+    },
+    {
+      "id": "beast",
+      "x": 64,
+      "y": 16
+    },
+    {
+      "id": "dragon",
+      "x": 80,
+      "y": 16
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import { buildAssets } from './build';
 import { encodePng } from './png';
 import { packSheet } from './sheet';
 import { renderSprite, type Sprite } from './sprite';
+import { BATTLE_SPRITES, LAIR_SPRITES } from './sprites/battle';
 import { BUILDING_SPRITES } from './sprites/buildings';
 import { CITY_SPRITES } from './sprites/cities';
 import { TERRAIN_SPRITES } from './sprites/terrain';
@@ -158,6 +159,37 @@ describe('UNIT_SPRITES', () => {
   });
 });
 
+describe('BATTLE_SPRITES', () => {
+  it('has exactly 14 sprites, one per archetype, all authored at the 16x16 unit cell size', () => {
+    expect(BATTLE_SPRITES).toHaveLength(14);
+    for (const sprite of BATTLE_SPRITES) {
+      expect(sprite.size).toBe(16);
+      expect(sprite.rows).toHaveLength(16);
+      for (const row of sprite.rows) {
+        expect(row).toHaveLength(16);
+      }
+    }
+  });
+
+  it('has 14 distinct sprite ids', () => {
+    const ids = new Set(BATTLE_SPRITES.map((s) => s.id));
+    expect(ids.size).toBe(14);
+  });
+});
+
+describe('LAIR_SPRITES', () => {
+  it('has exactly 1 sprite, authored at the 24x24 strategic-map cell size', () => {
+    expect(LAIR_SPRITES).toHaveLength(1);
+    for (const sprite of LAIR_SPRITES) {
+      expect(sprite.size).toBe(24);
+      expect(sprite.rows).toHaveLength(24);
+      for (const row of sprite.rows) {
+        expect(row).toHaveLength(24);
+      }
+    }
+  });
+});
+
 describe('buildAssets', () => {
   let outDir: string;
 
@@ -165,7 +197,7 @@ describe('buildAssets', () => {
     if (outDir) await rm(outDir, { recursive: true, force: true });
   });
 
-  it('writes terrain/units/buildings/cities PNGs and manifests to a scratch dir', async () => {
+  it('writes terrain/units/buildings/cities/battle/lair PNGs and manifests to a scratch dir', async () => {
     outDir = await mkdtemp(path.join(tmpdir(), 'pixelsmith-test-'));
     await buildAssets(outDir);
 
@@ -174,6 +206,8 @@ describe('buildAssets', () => {
       { name: 'units', count: UNIT_SPRITES.length, cellSize: 16 },
       { name: 'buildings', count: BUILDING_SPRITES.length, cellSize: 32 },
       { name: 'cities', count: CITY_SPRITES.length, cellSize: 24 },
+      { name: 'battle', count: BATTLE_SPRITES.length, cellSize: 16 },
+      { name: 'lair', count: LAIR_SPRITES.length, cellSize: 24 },
     ];
 
     for (const sheet of sheets) {
