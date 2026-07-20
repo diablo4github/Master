@@ -156,3 +156,57 @@ describe('lair monsters', () => {
     expect(found).toBe(true);
   });
 });
+
+describe('regiment-scale doctrine (DESIGN.md Combat)', () => {
+  // Regiment-scale doctrine bands.
+  const SWARM_MIN = 60;
+  const SWARM_MAX = 120;
+  const HULKING_MIN = 40;
+  const HULKING_MAX = 80;
+  const DEAD_ZONE_MIN = 3;
+  const DEAD_ZONE_MAX = 25;
+
+  it('never leaves a creature in the old squad-scale dead zone (3-25 figures)', () => {
+    for (const unit of creatures) {
+      const f = unit.combat.figures;
+      expect(f < DEAD_ZONE_MIN || f > DEAD_ZONE_MAX, `${unit.id} figures=${f}`).toBe(true);
+    }
+  });
+
+  it('gives any singular unit (figures === 1) a big hit pool (>= 30)', () => {
+    for (const unit of creatures) {
+      if (unit.combat.figures !== 1) continue;
+      expect(unit.combat.hits, unit.id).toBeGreaterThanOrEqual(30);
+    }
+  });
+
+  it('sizes hulking companies (forest troll, ogre-brute) 40-80 figures at 8-15 hits', () => {
+    for (const unit of creatures) {
+      if (unit.combat.figures === 1) continue;
+      if (unit.combat.hits < 8) continue;
+      expect(unit.combat.figures, unit.id).toBeGreaterThanOrEqual(HULKING_MIN);
+      expect(unit.combat.figures, unit.id).toBeLessThanOrEqual(HULKING_MAX);
+      expect(unit.combat.hits, unit.id).toBeLessThanOrEqual(15);
+    }
+  });
+
+  it('keeps swarm/pack creatures at 60-120 figures, 1-2 hits', () => {
+    for (const unit of creatures) {
+      if (unit.combat.figures < SWARM_MIN || unit.combat.figures > SWARM_MAX) continue;
+      if (unit.combat.hits >= 8) continue; // hulking-scale company, not a swarm
+      expect([1, 2], unit.id).toContain(unit.combat.hits);
+    }
+  });
+
+  it('keeps skeleton and zombie at Death-summon numerous scale (>= 250 figures)', () => {
+    expect(CREATURE_UNITS.skeleton?.combat.figures ?? 0).toBeGreaterThanOrEqual(250);
+    expect(CREATURE_UNITS.zombie?.combat.figures ?? 0).toBeGreaterThanOrEqual(250);
+  });
+
+  it('makes elder-dragon and angel singular (figures === 1) with a mighty hit pool', () => {
+    expect(CREATURE_UNITS['elder-dragon']?.combat.figures).toBe(1);
+    expect(CREATURE_UNITS['elder-dragon']?.combat.hits ?? 0).toBeGreaterThanOrEqual(30);
+    expect(CREATURE_UNITS.angel?.combat.figures).toBe(1);
+    expect(CREATURE_UNITS.angel?.combat.hits ?? 0).toBeGreaterThanOrEqual(30);
+  });
+});

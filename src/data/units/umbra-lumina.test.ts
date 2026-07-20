@@ -154,3 +154,70 @@ describe('umbra-lumina unit stats', () => {
     expect(umbraMean).toBeLessThan(luminaMean);
   });
 });
+
+describe('regiment-scale doctrine (DESIGN.md Combat)', () => {
+  const allUnits = [...Object.values(UMBRA_UNITS), ...Object.values(LUMINA_UNITS)];
+
+  // Regiment-scale doctrine bands.
+  const REGIMENT_MIN = 250;
+  const REGIMENT_MAX = 500;
+  const CAVALRY_MIN = 180;
+  const CAVALRY_MAX = 300;
+  const SWARM_MIN = 60;
+  const SWARM_MAX = 120;
+  const HULKING_MIN = 40;
+  const HULKING_MAX = 80;
+  const DEAD_ZONE_MIN = 3;
+  const DEAD_ZONE_MAX = 25;
+
+  it('never leaves a unit in the old squad-scale dead zone (3-25 figures)', () => {
+    for (const unit of allUnits) {
+      const f = unit.combat.figures;
+      expect(f < DEAD_ZONE_MIN || f > DEAD_ZONE_MAX, `${unit.id} figures=${f}`).toBe(true);
+    }
+  });
+
+  it('sizes foot/ranged regiments 250-500 figures at 1-2 hits (swarm-scale units excluded by scale)', () => {
+    for (const unit of allUnits) {
+      if (unit.role !== 'infantry' && unit.role !== 'ranged') continue;
+      if (unit.combat.figures <= SWARM_MAX) continue;
+      expect(unit.combat.figures, unit.id).toBeGreaterThanOrEqual(REGIMENT_MIN);
+      expect(unit.combat.figures, unit.id).toBeLessThanOrEqual(REGIMENT_MAX);
+      expect([1, 2], unit.id).toContain(unit.combat.hits);
+    }
+  });
+
+  it('sizes cavalry 180-300 figures (swarm-scale pack cavalry excluded by scale)', () => {
+    for (const unit of allUnits) {
+      if (unit.role !== 'cavalry') continue;
+      if (unit.combat.figures <= SWARM_MAX) continue;
+      expect(unit.combat.figures, unit.id).toBeGreaterThanOrEqual(CAVALRY_MIN);
+      expect(unit.combat.figures, unit.id).toBeLessThanOrEqual(CAVALRY_MAX);
+    }
+  });
+
+  it('sizes hulking companies (crystalfolk colossus) 40-80 figures at 8-15 hits', () => {
+    for (const unit of allUnits) {
+      if (unit.combat.figures === 1) continue;
+      if (unit.combat.hits < 8) continue;
+      expect(unit.combat.figures, unit.id).toBeGreaterThanOrEqual(HULKING_MIN);
+      expect(unit.combat.figures, unit.id).toBeLessThanOrEqual(HULKING_MAX);
+      expect(unit.combat.hits, unit.id).toBeLessThanOrEqual(15);
+    }
+  });
+
+  it('keeps swarm/pack units at 60-120 figures, 1-2 hits', () => {
+    for (const unit of allUnits) {
+      if (unit.combat.figures < SWARM_MIN || unit.combat.figures > SWARM_MAX) continue;
+      if (unit.combat.hits >= 8) continue; // hulking-scale company, not a swarm
+      expect([1, 2], unit.id).toContain(unit.combat.hits);
+    }
+  });
+
+  it('gives any singular unit (figures === 1) a big hit pool (>= 30)', () => {
+    for (const unit of allUnits) {
+      if (unit.combat.figures !== 1) continue;
+      expect(unit.combat.hits, unit.id).toBeGreaterThanOrEqual(30);
+    }
+  });
+});

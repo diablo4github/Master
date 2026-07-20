@@ -49,8 +49,18 @@ const RACE_UNIT_PREFIX: Record<string, string> = {
 const MERIDIA_RACE_IDS = Object.keys(RACE_UNIT_PREFIX);
 
 const units = Object.values(MERIDIA_UNITS);
-const militia = { figures: 6, hits: 3, damage: 2 }; // core.ts militia anchor
-const militiaProduct = militia.figures * militia.hits * militia.damage; // 36
+
+// Regiment-scale doctrine bands (DESIGN.md Combat section).
+const REGIMENT_MIN = 250;
+const REGIMENT_MAX = 500;
+const CAVALRY_MIN = 180;
+const CAVALRY_MAX = 300;
+const SWARM_MIN = 60;
+const SWARM_MAX = 120;
+const HULKING_MIN = 40;
+const HULKING_MAX = 80;
+const DEAD_ZONE_MIN = 3;
+const DEAD_ZONE_MAX = 25;
 
 describe('meridia units', () => {
   it('covers exactly the 18 Meridia races, each with 4-5 units', () => {
@@ -146,15 +156,6 @@ describe('meridia units', () => {
     }
   });
 
-  it('keeps power-cost sane: figures*hits*melee.damage <= 6x militia unless cost >= 100', () => {
-    for (const unit of units) {
-      const product = unit.combat.figures * unit.combat.hits * unit.combat.melee.damage;
-      if (product > 6 * militiaProduct) {
-        expect(unit.cost ?? 0, `${unit.id} product=${product}`).toBeGreaterThanOrEqual(100);
-      }
-    }
-  });
-
   it('caps breath-weapon at one unit per race', () => {
     const byRace = new Map<string, number>();
     for (const unit of units) {
@@ -171,6 +172,59 @@ describe('meridia units', () => {
   it('gives every unit a non-empty description', () => {
     for (const unit of units) {
       expect(unit.description.trim().length, unit.id).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('regiment-scale doctrine (DESIGN.md Combat)', () => {
+  it('never leaves a unit in the old squad-scale dead zone (3-25 figures)', () => {
+    for (const unit of units) {
+      const f = unit.combat.figures;
+      expect(f < DEAD_ZONE_MIN || f > DEAD_ZONE_MAX, `${unit.id} figures=${f}`).toBe(true);
+    }
+  });
+
+  it('sizes foot/ranged regiments 250-500 figures at 1-2 hits (swarm/hulking units excluded by scale)', () => {
+    for (const unit of units) {
+      if (unit.role !== 'infantry' && unit.role !== 'ranged') continue;
+      if (unit.combat.figures <= SWARM_MAX) continue; // swarm/hulking-scale racial units
+      expect(unit.combat.figures, unit.id).toBeGreaterThanOrEqual(REGIMENT_MIN);
+      expect(unit.combat.figures, unit.id).toBeLessThanOrEqual(REGIMENT_MAX);
+      expect([1, 2], unit.id).toContain(unit.combat.hits);
+    }
+  });
+
+  it('sizes cavalry 180-300 figures (swarm-scale pack cavalry excluded by scale)', () => {
+    for (const unit of units) {
+      if (unit.role !== 'cavalry') continue;
+      if (unit.combat.figures <= SWARM_MAX) continue;
+      expect(unit.combat.figures, unit.id).toBeGreaterThanOrEqual(CAVALRY_MIN);
+      expect(unit.combat.figures, unit.id).toBeLessThanOrEqual(CAVALRY_MAX);
+    }
+  });
+
+  it('sizes hulking companies (ogres) 40-80 figures at 8-15 hits', () => {
+    for (const unit of units) {
+      if (unit.combat.figures === 1) continue; // singular great monsters, not hulking companies
+      if (unit.combat.hits < 8) continue;
+      expect(unit.combat.figures, unit.id).toBeGreaterThanOrEqual(HULKING_MIN);
+      expect(unit.combat.figures, unit.id).toBeLessThanOrEqual(HULKING_MAX);
+      expect(unit.combat.hits, unit.id).toBeLessThanOrEqual(15);
+    }
+  });
+
+  it('keeps swarm/pack units at 60-120 figures, 1-2 hits', () => {
+    for (const unit of units) {
+      if (unit.combat.figures < SWARM_MIN || unit.combat.figures > SWARM_MAX) continue;
+      if (unit.combat.hits >= 8) continue; // hulking-scale company, not a swarm
+      expect([1, 2], unit.id).toContain(unit.combat.hits);
+    }
+  });
+
+  it('gives any singular unit (figures === 1) a big hit pool (>= 30)', () => {
+    for (const unit of units) {
+      if (unit.combat.figures !== 1) continue;
+      expect(unit.combat.hits, unit.id).toBeGreaterThanOrEqual(30);
     }
   });
 });

@@ -25,7 +25,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'death' },
     combat: {
-      figures: 6,
+      figures: 300,
       hits: 1,
       melee: { attack: 2, damage: 1, reach: 1 },
       armor: 0,
@@ -49,8 +49,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'death' },
     combat: {
-      figures: 6,
-      hits: 2,
+      figures: 250,
+      hits: 1,
       melee: { attack: 2, damage: 2, reach: 1 },
       armor: 0,
       speed: 1,
@@ -73,8 +73,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'death' },
     combat: {
-      figures: 4,
-      hits: 3,
+      figures: 40,
+      hits: 2,
       melee: { attack: 4, damage: 2, reach: 1 },
       armor: 0,
       speed: 3,
@@ -102,7 +102,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { school: 'life' },
     combat: {
       figures: 1,
-      hits: 20,
+      hits: 70,
       melee: { attack: 10, damage: 8, reach: 1 },
       armor: 6,
       speed: 4,
@@ -130,7 +130,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { school: 'life' },
     combat: {
       figures: 1,
-      hits: 10,
+      hits: 40,
       melee: { attack: 7, damage: 5, reach: 1 },
       armor: 4,
       speed: 2,
@@ -154,7 +154,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { school: 'life' },
     combat: {
       figures: 1,
-      hits: 12,
+      hits: 45,
       melee: { attack: 8, damage: 6, reach: 1 },
       armor: 5,
       speed: 3,
@@ -182,7 +182,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { school: 'chaos' },
     combat: {
       figures: 1,
-      hits: 8,
+      hits: 45,
       melee: { attack: 6, damage: 4, reach: 1 },
       armor: 3,
       speed: 3,
@@ -205,8 +205,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'chaos' },
     combat: {
-      figures: 3,
-      hits: 3,
+      figures: 80,
+      hits: 1,
       melee: { attack: 5, damage: 3, reach: 1 },
       armor: 1,
       speed: 5,
@@ -229,8 +229,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'chaos' },
     combat: {
-      figures: 2,
-      hits: 5,
+      figures: 1,
+      hits: 35,
       melee: { attack: 5, damage: 4, reach: 1 },
       armor: 2,
       speed: 2,
@@ -256,8 +256,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'nature' },
     combat: {
-      figures: 2,
-      hits: 6,
+      figures: 1,
+      hits: 35,
       melee: { attack: 6, damage: 4, reach: 1 },
       armor: 2,
       speed: 3,
@@ -280,8 +280,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'nature' },
     combat: {
-      figures: 1,
-      hits: 10,
+      figures: 45,
+      hits: 13,
       melee: { attack: 6, damage: 5, reach: 1 },
       armor: 3,
       speed: 2,
@@ -303,8 +303,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'nature' },
     combat: {
-      figures: 4,
-      hits: 3,
+      figures: 90,
+      hits: 1,
       melee: { attack: 5, damage: 2, reach: 1 },
       armor: 0,
       speed: 4,
@@ -331,8 +331,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'summon',
     origin: { school: 'sorcery' },
     combat: {
-      figures: 2,
-      hits: 4,
+      figures: 70,
+      hits: 2,
       melee: { attack: 6, damage: 3, reach: 1 },
       armor: 1,
       speed: 3,
@@ -356,7 +356,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { school: 'sorcery' },
     combat: {
       figures: 1,
-      hits: 7,
+      hits: 40,
       melee: { attack: 6, damage: 4, reach: 1 },
       armor: 2,
       speed: 4,
@@ -379,7 +379,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { school: 'sorcery' },
     combat: {
       figures: 1,
-      hits: 8,
+      hits: 32,
       melee: { attack: 5, damage: 4, reach: 1 },
       armor: 4,
       speed: 2,
@@ -406,8 +406,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'monster',
     origin: { generic: true },
     combat: {
-      figures: 5,
-      hits: 2,
+      figures: 70,
+      hits: 1,
       melee: { attack: 4, damage: 2, reach: 1 },
       armor: 0,
       speed: 3,
@@ -429,8 +429,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'monster',
     origin: { generic: true },
     combat: {
-      figures: 6,
-      hits: 2,
+      figures: 90,
+      hits: 1,
       melee: { attack: 4, damage: 2, reach: 1 },
       armor: 0,
       speed: 4,
@@ -451,8 +451,8 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     role: 'monster',
     origin: { generic: true },
     combat: {
-      figures: 2,
-      hits: 8,
+      figures: 55,
+      hits: 10,
       melee: { attack: 6, damage: 5, reach: 1 },
       armor: 2,
       speed: 2,
@@ -475,7 +475,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { generic: true },
     combat: {
       figures: 1,
-      hits: 10,
+      hits: 35,
       melee: { attack: 6, damage: 4, reach: 1 },
       armor: 2,
       speed: 4,
@@ -498,7 +498,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { generic: true },
     combat: {
       figures: 1,
-      hits: 16,
+      hits: 50,
       melee: { attack: 8, damage: 7, reach: 1 },
       armor: 3,
       speed: 2,
@@ -521,7 +521,7 @@ export const CREATURE_UNITS: Record<string, UnitDef> = {
     origin: { generic: true },
     combat: {
       figures: 1,
-      hits: 30,
+      hits: 90,
       melee: { attack: 12, damage: 10, reach: 1 },
       armor: 7,
       speed: 3,
