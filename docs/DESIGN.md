@@ -102,6 +102,43 @@ steps:
 - Implementation consequence: combat is a **deterministic simulation** producing
   a replayable event log; the viewer is a pure playback layer.
 
+### No rock-paper-scissors — physics of the fiction
+
+Counters are **emergent from simulated causes**, never from bonus-vs-tag
+lookup tables:
+
+- Spearmen blunt cavalry because **reach** strikes chargers first, not because
+  of an anti-cavalry tag.
+- Cavalry shatters loose or routing infantry because **mass × speed** is
+  charge impact against low cohesion.
+- Archers beat slow melee by **kiting** (speed + range), and lose when pinned.
+- Veterans matter because **skill drives the unit AI**: green troops blob,
+  break formation, and panic; veterans hold lines, screen their archers,
+  focus wounded targets, and rally.
+- **Morale and discipline** decide as many fights as damage does. Casualties,
+  fear auras, flanking, and a rout next door all test morale; broken units
+  run, and pursuit cuts them down.
+
+Units are **multi-figure formations** (MoM-style): a spearman unit is six
+spearmen; damage kills figures, and a half-strength unit hits half as hard.
+
+### Fantastical elements — small to massive
+
+Realistic army composition is the canvas; magic is the paint. Abilities are a
+**typed effect vocabulary** implemented one by one in the engine — some small
+(a poison blade, a regenerating troll wound), some battle-warping (a dragon's
+breath, an angel's radiance, terror that breaks a flank without a sword drawn).
+The design goal: most battles are decided by composition and tactics, and
+every so often a fantastical element **rewrites** one.
+
+### Where battles come from (this milestone)
+
+Armies are **stacks of co-located units** (cap 9). Moving onto a hostile tile
+starts a battle on a small tactical field derived from the strategic terrain.
+The first hostiles are **monster lairs** seeded at worldgen (a very Master of
+Magic institution): clearing one yields loot and clears the region. Wizard-vs-
+wizard warfare arrives with the AI-opponents milestone.
+
 ## Summons
 
 - Every school summons mythical creatures.

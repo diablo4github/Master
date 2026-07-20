@@ -232,8 +232,67 @@ export type UnitRole =
   | 'siege'
   | 'hero'
   | 'summon'
+  /** Neutral wilderness creatures (lair garrisons, rampagers). */
+  | 'monster'
   | 'settler'
   | 'ship';
+
+/**
+ * Typed ability vocabulary. Every entry here is IMPLEMENTED in the combat
+ * engine — content may only use these. Counters must stay emergent (physics
+ * of the fiction); never add a "bonus vs <role>" ability.
+ * Magnitude range is intentional: poison is a small effect, breath-weapon
+ * rewrites a battle.
+ */
+export type AbilityDef =
+  | { type: 'flying' } // ignores terrain, can only be struck by reach/ranged/flyers
+  | { type: 'first-strike' } // resolves melee before the defender's simultaneous blow
+  | { type: 'charge'; bonus: number } // extra impact damage scaling with speed×mass
+  | { type: 'poison'; strength: number } // per-hit lingering damage over ticks
+  | { type: 'regeneration'; perTick: number } // heals hits each tick, figures can stand back up
+  | { type: 'fear'; radius: number } // morale pressure aura on nearby enemies
+  | { type: 'inspire'; radius: number; bonus: number } // morale aura for nearby allies
+  | { type: 'holy-aura'; radius: number; healPerTick: number } // heals nearby allies
+  | { type: 'life-drain'; fraction: number } // melee damage dealt also heals self
+  | { type: 'breath-weapon'; damage: number; range: number; cooldown: number } // line blast
+  | { type: 'trample' } // may continue moving through a figure it kills
+  | { type: 'undead' } // no morale (never routs), immune to poison/fear, no food upkeep
+  | { type: 'fearless' } // passes all morale checks (living discipline, not undeath)
+  | { type: 'pack-hunter' }; // gains attack when flanking with another pack-hunter
+
+export interface UnitCombatStats {
+  /** Figures in the formation (damage kills figures; fewer figures = less output). */
+  figures: number;
+  /** Hit points per figure. */
+  hits: number;
+  melee: {
+    /** To-hit strength, contested against target defense-in-context. */
+    attack: number;
+    /** Damage per landed figure-blow. */
+    damage: number;
+    /** 1 = arm's length; 2 = spear/pike (strikes chargers first). */
+    reach: 1 | 2;
+  };
+  /** Omit for pure melee units. */
+  ranged?: {
+    attack: number;
+    damage: number;
+    /** Tactical tiles. */
+    range: number;
+    /** Volleys before the quiver is empty. */
+    ammo: number;
+  };
+  /** Flat damage soak per blow. */
+  armor: number;
+  /** Tactical tiles per tick — kiting and charging both live here. */
+  speed: number;
+  /** Charge physics and shove resistance (a horse is 4, a militiaman is 1). */
+  mass: number;
+  /** Base nerve 0–100. Checked on casualties, fear, flanking, routs nearby. */
+  morale: number;
+  /** Formation cohesion 0–100: holding lines, orderly withdrawal, rally odds. */
+  discipline: number;
+}
 
 export interface UnitDef {
   id: string;
@@ -246,16 +305,15 @@ export interface UnitDef {
   origin: { race: string } | { school: SchoolId } | { generic: true };
   /** Production cost to train (mundane units). */
   cost?: number;
-  attack: number;
-  defense: number;
-  hits: number;
+  combat: UnitCombatStats;
+  /** Strategic-map movement points. */
   moves: number;
   /** Tactical skill 0–100: drives combat AI quality (formation, kiting, rout). */
   skill: number;
   upkeep: { gold?: number; food?: number; mana?: number };
   /** For summons: casting cost. */
   summonCost?: number;
-  abilities: readonly string[];
+  abilities: readonly AbilityDef[];
   description: string;
 }
 
@@ -297,6 +355,10 @@ export interface UnitState {
   y: number;
   /** Movement points remaining this turn. */
   moves: number;
+  /**
+   * Total remaining hit-point pool (max = figures × hits). Combat derives
+   * surviving figures from this; strategic healing refills it.
+   */
   hp: number;
 }
 
