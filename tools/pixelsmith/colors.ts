@@ -70,6 +70,7 @@ export const DEATH = {
   ember: '#d9662f',
   emberLight: '#f2a84f',
   boneWhite: '#d8d0b0',
+  boneBright: '#efe8cf',
   boneShadow: '#a89f7c',
   voidBlack: '#17141c',
   purple: '#5a3d6b',

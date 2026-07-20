@@ -31,7 +31,7 @@
 
 import type { BuildingDef } from '@sim/types';
 
-export const BUILDINGS = {
+export const BUILDINGS: Record<string, BuildingDef> = {
   // ---------------------------------------------------------------------
   // Economy
   // ---------------------------------------------------------------------
@@ -512,6 +512,4 @@ export const BUILDINGS = {
     effects: '+10 mana per population; grants flying garrison units a defense bonus.',
     description: 'A fortress of living light, its ramparts patrolled by things with too many wings.',
   },
-} as const satisfies Record<string, BuildingDef>;
-
-export type BuildingId = keyof typeof BUILDINGS;
+};
