@@ -187,7 +187,8 @@ function generateBlobField(rng: Rng, width: number, height: number, numBlobs: nu
         const dy = y + 0.5 - cy;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < radius) {
-          field[xyToIndex(x, y, width)] += amp * (1 - dist / radius);
+          const idx = xyToIndex(x, y, width);
+          field[idx] = (field[idx] as number) + amp * (1 - dist / radius);
         }
       }
     }
