@@ -10,11 +10,11 @@ import { mkUnit, unit } from './testkit';
  */
 const GREEN = mkUnit('greens', {
   skill: 20,
-  combat: { figures: 6, hits: 3, melee: { attack: 5, damage: 3, reach: 1 }, armor: 2, speed: 2, mass: 1, morale: 50, discipline: 50 },
+  combat: { figures: 400, hits: 1, melee: { attack: 5, damage: 3, reach: 1 }, armor: 2, speed: 2, mass: 1, morale: 50, discipline: 50 },
 });
 const VETERAN = mkUnit('veterans', {
   skill: 70,
-  combat: { figures: 6, hits: 3, melee: { attack: 5, damage: 3, reach: 1 }, armor: 2, speed: 2, mass: 1, morale: 50, discipline: 50 },
+  combat: { figures: 400, hits: 1, melee: { attack: 5, damage: 3, reach: 1 }, armor: 2, speed: 2, mass: 1, morale: 50, discipline: 50 },
 });
 
 describe('skill is a behavioural edge, not a stat edge', () => {

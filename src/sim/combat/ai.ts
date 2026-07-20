@@ -166,8 +166,14 @@ function approachAndStrike(ctx: BattleContext, c: Combatant, target: Combatant):
     return;
   }
 
+  // A braced reach-2 line STOPS the charge: the opportunity strike already
+  // impaled the chargers, and set spears/pikes deny the charge its impact bonus
+  // (the horses pull up short). The morale shock still lands (halved by the
+  // brace inside chargeShock). This is the emergent anvil — reach beats charge.
+  const braced = target.def.combat.melee.reach >= 2;
+  const chargeLands = charging && !braced;
   if (charging) chargeShock(ctx, c, target);
-  meleeAttack(ctx, c, target, { charging });
+  meleeAttack(ctx, c, target, { charging: chargeLands });
 
   // trample: a charge that destroys its target rolls on into the next enemy.
   if (charging && hasAbility(c.def, 'trample') && target.figures <= 0) {
