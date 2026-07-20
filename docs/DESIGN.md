@@ -119,8 +119,21 @@ lookup tables:
   fear auras, flanking, and a rout next door all test morale; broken units
   run, and pursuit cuts them down.
 
-Units are **multi-figure formations** (MoM-style): a spearman unit is six
-spearmen; damage kills figures, and a half-strength unit hits half as hard.
+Units are **multi-figure formations at realistic strength**. The principal
+unit is the **regiment**, sized on US Civil War effective strengths:
+
+- Foot regiments: **~300–480 figures**; cavalry **~200–280**; elite guard
+  formations **~120–240** (fewer, better).
+- Hulking creatures (ogres, trolls) form **companies of ~40–80**; beast packs
+  and swarms run **~60–120**.
+- Great monsters and celestials are **singular**: one dragon, one angel. A
+  dragon sweeping hundreds of levies aside is a powerful image — the scale
+  exists to deliver it.
+
+Damage kills figures and a depleted regiment hits proportionally softer.
+The engine models **frontage**: only the fighting front of a regiment engages
+each tick, so line battles grind and flanks matter, while area effects
+(breath, trample) reap through massed ranks.
 
 ### Fantastical elements — small to massive
 
@@ -152,6 +165,19 @@ wizard warfare arrives with the AI-opponents milestone.
 
 MoO1-style abstraction. Sliders, ranked priorities, and smart defaults over
 micromanagement. If a screen would make the player do arithmetic, abstract it.
+
+Conventions in service of that:
+
+- **Armies**: units combine into named armies that move and fight as one
+  (slowest member sets the pace). Stacks cap at 9 units.
+- **Production queues**: cities queue multiple orders; completing one starts
+  the next.
+- **End Turn is a decision assistant**: if research is unset or a city's
+  queue is empty, the button surfaces that decision first (label changes
+  accordingly) instead of silently wasting turns. Only when nothing needs
+  the player does it advance the turn.
+- **City names**: every race carries a themed name list; capitals and founded
+  cities draw from it automatically (the player can rename on founding).
 
 ## Art
 

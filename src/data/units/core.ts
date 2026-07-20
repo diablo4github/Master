@@ -2,12 +2,17 @@
  * Generic units any race can train — and the CANONICAL STAT EXEMPLARS.
  * Every racial roster is balanced against the militia baseline below.
  *
+ * REGIMENT SCALE (DESIGN.md): figures are realistic effective strengths,
+ * US-Civil-War-regiment sized. Per-figure hits stay small (1-2 for men);
+ * the engine's frontage model does the rest.
+ *
  * Archetype anchors (deviate for racial identity, not for power creep):
- *   line spear   f6 h3  melee 4/2 reach2  armor 1 spd 2 mass 1 mor 50 dis 50 skill 30
- *   line sword   f6 h3  melee 5/3 reach1  armor 2 spd 2 mass 1 mor 50 dis 50 skill 30
- *   archer       f6 h2  melee 2/1 reach1  ranged 4/2 rng6 ammo8  armor 0 spd 2
- *   cavalry      f4 h4  melee 5/3 reach1  armor 2 spd 4 mass 4 + charge
- *   elite        one tier up in 2-3 stats, 1-2 abilities, cost ~2x line
+ *   line spear   f400 h1  melee 4/2 reach2  armor 1 spd 2 mass 1 mor 50 dis 50 skill 30
+ *   line sword   f400 h1  melee 5/3 reach1  armor 2 spd 2 mass 1 mor 50 dis 50 skill 30
+ *   archer       f320 h1  melee 2/1 reach1  ranged 4/2 rng6 ammo8  armor 0 spd 2
+ *   cavalry      f240 h2  melee 5/3 reach1  armor 2 spd 4 mass 4 + charge
+ *   elite guard  f120-240, hits/armor up, 1-2 abilities, cost ~2x line
+ *   ogre-scale   f40-80 h8-15;  swarm f60-120;  great monster f1 h60+
  */
 import type { UnitDef } from '../../sim/types';
 
@@ -19,8 +24,8 @@ export const CORE_UNITS: Record<string, UnitDef> = {
     origin: { generic: true },
     cost: 60,
     combat: {
-      figures: 4,
-      hits: 2,
+      figures: 200,
+      hits: 1,
       melee: { attack: 1, damage: 1, reach: 1 },
       armor: 0,
       speed: 1,
@@ -43,8 +48,8 @@ export const CORE_UNITS: Record<string, UnitDef> = {
     origin: { generic: true },
     cost: 30,
     combat: {
-      figures: 6,
-      hits: 3,
+      figures: 350,
+      hits: 1,
       melee: { attack: 3, damage: 2, reach: 1 },
       armor: 1,
       speed: 2,

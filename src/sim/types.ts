@@ -144,6 +144,12 @@ export interface RaceDef {
   buildings: readonly string[];
   /** Ids of this race's unique magical-study tech tree nodes. */
   studies: readonly string[];
+  /**
+   * Themed city names, drawn in order (deterministically) for the capital
+   * and founded cities. At least 10 per race; sim falls back to numbered
+   * names when exhausted.
+   */
+  cityNames: readonly string[];
   description: string;
 }
 
@@ -261,7 +267,13 @@ export type AbilityDef =
   | { type: 'pack-hunter' }; // gains attack when flanking with another pack-hunter
 
 export interface UnitCombatStats {
-  /** Figures in the formation (damage kills figures; fewer figures = less output). */
+  /**
+   * Figures in the formation, at REALISTIC regiment scale (see DESIGN.md):
+   * foot regiments ~300-480, cavalry ~200-280, elites ~120-240, hulking
+   * creature companies ~40-80, swarms ~60-120, great monsters 1 (a dragon is
+   * one dragon). Damage kills figures; fewer figures = less fighting output.
+   * The engine's frontage model keeps mass battles grinding realistically.
+   */
   figures: number;
   /** Hit points per figure. */
   hits: number;
@@ -350,6 +362,8 @@ export interface UnitState {
   id: string;
   owner: string;
   defId: string;
+  /** Army membership; undefined = independent. Armies move and fight as one. */
+  armyId?: string;
   plane: PlaneId;
   x: number;
   y: number;
