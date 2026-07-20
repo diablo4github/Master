@@ -28,26 +28,40 @@ function roofTriangle(grid: Grid, apexX: number, apexY: number, height: number, 
 
 function templeTier1(): Sprite {
   const g = makeGrid(SIZE);
-  // modest gable roof
-  roofTriangle(g, 15, 4, 7, 'rf', 'rfl', 'rfd');
-  setPixel(g, 15, 3, 'g');
-  // wall body
-  fillRect(g, 9, 12, 22, 26, 'w');
-  fillRect(g, 9, 12, 10, 26, 'wl');
-  fillRect(g, 21, 12, 22, 26, 'wd');
-  fillRect(g, 8, 11, 23, 11, 'g');
-  // flanking columns
-  fillRect(g, 12, 14, 12, 26, 'wl');
-  fillRect(g, 19, 14, 19, 26, 'wd');
-  // entrance recess
-  fillRect(g, 14, 18, 17, 26, 'dr');
-  // steps
-  fillRect(g, 6, 27, 25, 28, 'st');
-  fillRect(g, 5, 29, 26, 30, 'st2');
+  // modest gable roof with a gold ridge tip
+  roofTriangle(g, 15, 5, 6, 'rf', 'rfl', 'rfd');
+  setPixel(g, 15, 4, 'g');
+  // gold cornice, echoing the cornice band on tiers 3 and 5
+  fillRect(g, 8, 12, 23, 12, 'g');
+  // wall body, with pilaster shading at the outer edges
+  fillRect(g, 9, 13, 22, 27, 'w');
+  fillRect(g, 9, 13, 9, 27, 'wl');
+  fillRect(g, 22, 13, 22, 27, 'wd');
+  // portico: two free-standing columns (capital, shaft, base) flanking the door
+  fillRect(g, 10, 15, 13, 16, 'w');
+  setPixel(g, 10, 15, 'wl');
+  setPixel(g, 10, 16, 'wl');
+  fillRect(g, 11, 17, 12, 26, 'wl');
+  fillRect(g, 10, 27, 13, 27, 'w');
+  setPixel(g, 10, 27, 'wl');
+
+  fillRect(g, 18, 15, 21, 16, 'w');
+  setPixel(g, 21, 15, 'wd');
+  setPixel(g, 21, 16, 'wd');
+  fillRect(g, 19, 17, 20, 26, 'wd');
+  fillRect(g, 18, 27, 21, 27, 'w');
+  setPixel(g, 21, 27, 'wd');
+  // recessed entrance with a small gold lintel and a door
+  fillRect(g, 14, 18, 17, 27, 'dr');
+  fillRect(g, 14, 18, 17, 18, 'g');
+  fillRect(g, 15, 22, 16, 27, 'dr2');
+  // a step or two of base
+  fillRect(g, 7, 28, 24, 29, 'st');
+  fillRect(g, 6, 30, 25, 31, 'st2');
   return building('temple-tier-1', {
     rf: LIFE.white, rfl: LIFE.goldLight, rfd: LIFE.whiteShadow,
     w: LIFE.white, wl: LIFE.goldLight, wd: LIFE.whiteShadow,
-    g: LIFE.gold, dr: LIFE.whiteShadow, st: STONE.light, st2: STONE.mid,
+    g: LIFE.gold, dr: LIFE.whiteShadow, dr2: LIFE.goldDark, st: STONE.light, st2: STONE.mid,
   }, g);
 }
 

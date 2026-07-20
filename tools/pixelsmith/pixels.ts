@@ -105,6 +105,41 @@ const BAYER_4X4 = [
 ];
 
 /**
+ * Fill a roughly-circular blob of radius `r` centered at (cx, cy), shaded
+ * as a single directional light source would render it: `chLight` on the
+ * top-left rim (facing the light), `chShadow` on the bottom-right rim (the
+ * far side), `chBase` everywhere else. This is the generic "cluster"
+ * primitive for any rounded terrain feature — tree crowns, boulders,
+ * hill/dune mounds, crystal clusters, bone piles, snow caps — so those
+ * shapes read as individually lit forms instead of flat silhouettes,
+ * without hand-plotting highlight/shadow pixels per shape. Deterministic:
+ * purely a function of (cx, cy, r) and the fixed top-left light direction.
+ */
+export function shadeDisc(
+  grid: Grid,
+  cx: number,
+  cy: number,
+  r: number,
+  chBase: string,
+  chLight: string,
+  chShadow: string,
+): void {
+  const rSq = r * r + r * 0.5;
+  for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) {
+    for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      if (dx * dx + dy * dy > rSq) continue;
+      const diag = dx + dy;
+      let ch = chBase;
+      if (diag <= -1) ch = chLight;
+      else if (diag >= 1) ch = chShadow;
+      setPixel(grid, x, y, ch);
+    }
+  }
+}
+
+/**
  * Fill an inclusive rectangle with an ordered dither between two
  * characters. `ratio` (0..1) is approximately the fraction of pixels that
  * become `chB`; the rest become `chA`. Produces subtle, tileable texture
