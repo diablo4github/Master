@@ -15,7 +15,7 @@
 import type { PlaneMap, Tile } from '../map/tiles';
 import { getTile, inBounds, xyToIndex } from '../map/tiles';
 import type { TerrainId } from '../map/tiles';
-import type { UnitState } from '../core/state';
+import type { UnitState } from '../types';
 
 /** Cost, in movement points, to ENTER a tile of each terrain (land units). */
 export const IMPASSABLE = Infinity;

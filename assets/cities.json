@@ -1,0 +1,21 @@
+{
+  "cellSize": 24,
+  "columns": 8,
+  "entries": [
+    {
+      "id": "city-village",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "city-town",
+      "x": 24,
+      "y": 0
+    },
+    {
+      "id": "city-large",
+      "x": 48,
+      "y": 0
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 // of a shape, shadow chars on the bottom/right faces, matching the terrain
 // and building sprites for a consistent overall look.
 import type { Sprite } from '../sprite';
-import { compileSprite, fillRect, makeGrid, plot, setPixel, type Grid } from '../pixels';
+import { compileSprite, fillRect, makeGrid, setPixel, type Grid } from '../pixels';
 import { DEATH, EARTH, FOREST, LIFE, METAL, OUTLINE, SAND, SKIN, WATER } from '../colors';
 
 const SIZE = 16;
@@ -173,14 +173,17 @@ function settler(): Sprite {
   fillRect(g, 9, 13, 10, 14, 'td');
   fillRect(g, 4, 15, 7, 15, 'b');
   fillRect(g, 8, 15, 11, 15, 'b');
-  // hand-cart wheel hint, peeking out from behind at ground level
-  plot(g, [[1, 12], [1, 13], [2, 11], [2, 14], [3, 12], [3, 13]], 'wh');
-  plot(g, [[2, 12], [2, 13]], 'wd');
+  // hand-cart wheel hint: a small rim tucked directly behind the trailing
+  // boot, overlapping it rather than floating free, so it reads as part of
+  // a cart trundling along behind the settler instead of a stray object.
+  fillRect(g, 3, 12, 4, 13, 'wh');
+  setPixel(g, 3, 12, 'whl');
+  setPixel(g, 4, 13, 'wd');
   return unit('settler', {
     o: OUTLINE, s: SKIN.human, t: SAND.mid, tl: SAND.light, td: SAND.dark,
     c: EARTH.dark, cl: EARTH.mid, st: EARTH.shadow,
     sk: EARTH.mid, skl: EARTH.light, b: EARTH.shadow,
-    wh: METAL.mid, wd: METAL.dark,
+    wh: EARTH.shadow, whl: EARTH.mid, wd: OUTLINE,
   }, g);
 }
 
