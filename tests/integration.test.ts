@@ -13,8 +13,8 @@ import { STUDIES } from '../src/data/studies';
 import { WIZARDS } from '../src/data/wizards';
 import { createGame, type GameContent, type GameState, type LairState } from '../src/sim/core/state';
 import { advanceTurn, applyCommand } from '../src/sim/core/turn';
-import { findPath, isPassable, chebyshev } from '../src/sim/units/units';
-import { getTile, neighbors, type TerrainId } from '../src/sim/map/tiles';
+import { findPath, chebyshev } from '../src/sim/units/units';
+import { getTile, type TerrainId } from '../src/sim/map/tiles';
 import type { GameSettings } from '../src/sim/types';
 
 const content: GameContent = {
@@ -80,39 +80,25 @@ function nearestReachableLair(state: GameState): LairState {
   return lair;
 }
 
-/** A passable, reachable tile adjacent to the lair, closest to the capital. */
-function stagingTileFor(state: GameState, lair: LairState) {
-  const capital = state.cities[0]!;
-  const map = state.maps[capital.plane];
-  const options = neighbors(lair.x, lair.y, map.width, map.height)
-    .filter((n) => {
-      const t = getTile(map, n.x, n.y);
-      return !!t && t.elevation !== 3 && isPassable(map, n.x, n.y) && !isLairTile(state, n.x, n.y);
-    })
-    .filter((n) => findPath(map, capital.x, capital.y, n.x, n.y))
-    .sort((a, b) => chebyshev(a.x, a.y, capital.x, capital.y) - chebyshev(b.x, b.y, capital.x, capital.y));
-  const staging = options[0];
-  if (!staging) throw new Error('no reachable staging tile beside the lair for this seed');
-  return staging;
-}
-
 /**
  * Plays a fixed 80-turn session and returns the final state. Beyond the
- * economy/settler arc it raises a two-militia strike stack, marches it to a
- * staging tile beside the nearest reachable lair, and attacks it once — so a
- * real strategic battle is folded into the deterministic session.
+ * economy/settler arc it raises a two-militia strike stack, forms it into an
+ * army, and issues a SINGLE move-army order toward the nearest reachable lair.
+ * The persistent order + advanceTurn auto-march then carry the army across the
+ * map on their own until it reaches the lair and a real strategic battle
+ * resolves (which clears the order) — so the whole strike is one command plus
+ * the sim, folded into the deterministic session.
  */
 function playSession(): GameState {
   let state = createGame(settings, content);
   const me = state.players[0]!.id;
   const site = pickCitySite(state);
   const targetLair = nearestReachableLair(state);
-  const staging = stagingTileFor(state, targetLair);
 
   state = applyCommand(state, content, me, { type: 'set-research', studyId: 'humans-faith-1' });
 
   let militiaOrders = 0;
-  let attacked = false;
+  let ordered = false;
 
   for (let turn = 0; turn < 80; turn++) {
     // Settle the second city.
@@ -141,12 +127,12 @@ function playSession(): GameState {
       if (order) state = applyCommand(state, content, me, { type: 'queue-build', cityId: capital.id, order });
     }
 
-    // Raise a two-militia strike force, FORM IT INTO AN ARMY, march the army to
-    // the staging tile, then attack the lair with the whole army exactly once.
-    if (!attacked && state.cities.length >= 2) {
+    // Raise a two-militia strike force, FORM IT INTO AN ARMY, and issue a SINGLE
+    // move-army order toward the lair. Auto-march does the rest across turns; the
+    // battle triggers on arrival and clears the order — no per-turn re-issuing.
+    if (!ordered && state.cities.length >= 2) {
       const strike = state.units.filter((u) => u.owner === me && u.defId === 'militia').slice(0, 2);
       if (strike.length >= 2) {
-        // Form the army once, while both militia are still co-located.
         let armyId = strike[0]!.armyId;
         if (armyId === undefined) {
           const [a, b] = strike;
@@ -156,17 +142,12 @@ function playSession(): GameState {
           }
         }
         if (armyId !== undefined) {
-          const anchor = state.units.find((u) => u.armyId === armyId)!;
-          if (anchor.x === staging.x && anchor.y === staging.y) {
-            state = applyCommand(state, content, me, {
-              type: 'move-army',
-              armyId,
-              to: { x: targetLair.x, y: targetLair.y },
-            });
-            attacked = true;
-          } else if (anchor.moves > 0) {
-            state = applyCommand(state, content, me, { type: 'move-army', armyId, to: staging });
-          }
+          state = applyCommand(state, content, me, {
+            type: 'move-army',
+            armyId,
+            to: { x: targetLair.x, y: targetLair.y },
+          });
+          ordered = true;
         }
       }
     }

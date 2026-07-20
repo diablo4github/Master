@@ -39,6 +39,46 @@ describe('queue-build (append)', () => {
     ).toThrow(/requires/);
   });
 
+  it('allows duplicate UNIT orders but still rejects duplicate BUILDING orders', () => {
+    let s = cityState();
+    // Three militia in a row is legal now (queue multiples of the same unit).
+    s = applyCommand(s, CONTENT, ME, { type: 'queue-build', cityId: 'city-1', order: B('unit', 'militia') });
+    s = applyCommand(s, CONTENT, ME, { type: 'queue-build', cityId: 'city-1', order: B('unit', 'militia') });
+    s = applyCommand(s, CONTENT, ME, { type: 'queue-build', cityId: 'city-1', order: B('unit', 'militia') });
+    expect(s.cities[0]!.buildQueue.map((o) => o.id)).toEqual(['militia', 'militia', 'militia']);
+    // A building already queued is still rejected.
+    s = applyCommand(s, CONTENT, ME, { type: 'queue-build', cityId: 'city-1', order: B('building', 'workshop') });
+    expect(() =>
+      applyCommand(s, CONTENT, ME, { type: 'queue-build', cityId: 'city-1', order: B('building', 'workshop') }),
+    ).toThrow(/already queued/);
+    // A building already BUILT is rejected too.
+    const built = cityState({ buildings: ['granary'] });
+    expect(() =>
+      applyCommand(built, CONTENT, ME, { type: 'queue-build', cityId: 'city-1', order: B('building', 'granary') }),
+    ).toThrow(/already built/i);
+  });
+
+  it('trains two identically-deffed regiments from duplicate unit orders', () => {
+    let s = cityState({
+      buildQueue: [
+        { kind: 'unit', id: 'militia', progress: 0 }, // cost 10
+        { kind: 'unit', id: 'militia', progress: 0 }, // cost 10
+      ],
+    });
+    const before = s.units.length;
+    // One fat production tick completes both regiments (10 + 10).
+    tickProduction(s, CONTENT, s.cities[0]!, 20);
+    expect(s.cities[0]!.buildQueue).toHaveLength(0);
+    const trained = s.units.filter((u) => u.defId === 'militia');
+    expect(trained).toHaveLength(before + 2);
+    // Two distinct regiments (unique ids), both on the city tile.
+    expect(new Set(trained.map((u) => u.id)).size).toBe(2);
+    for (const u of trained) {
+      expect(u.x).toBe(s.cities[0]!.x);
+      expect(u.y).toBe(s.cities[0]!.y);
+    }
+  });
+
   it('enforces the queue cap of 7', () => {
     let s = cityState();
     s.players[0]!.completedStudies = ['arcane-arts', 'war-drums']; // unlock wizard-tower + orc-warrior

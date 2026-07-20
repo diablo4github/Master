@@ -333,6 +333,31 @@ export function advanceTurn(state: GameState, content: GameContent): GameState {
         unit.hp = Math.min(maxHp, unit.hp + maxHp * rate);
       }
     }
+
+    // (6) Auto-march: every army of this player carrying a 'move' order and with
+    //     movement to spend advances toward its destination with the same
+    //     pathing/battle semantics as the move-army command. A mid-march battle
+    //     STOPS the order (the player reassesses); arrival or an unreachable
+    //     path clears it too; otherwise the order persists for next turn. Army
+    //     ids are gathered in stable state.units order for determinism.
+    const marchIds: string[] = [];
+    const seenArmies = new Set<string>();
+    for (const u of next.units) {
+      if (u.owner !== player.id || u.armyId === undefined) continue;
+      if (seenArmies.has(u.armyId)) continue;
+      seenArmies.add(u.armyId);
+      if (next.armyOrders[u.armyId]?.kind === 'move') marchIds.push(u.armyId);
+    }
+    for (const armyId of marchIds) {
+      const order = next.armyOrders[armyId];
+      if (!order || order.kind !== 'move') continue; // may have cleared mid-loop
+      const members = armyMembers(next, armyId);
+      if (members.length === 0) continue;
+      const remaining = members.reduce((m, u) => Math.min(m, u.moves), Infinity);
+      if (remaining <= 0) continue; // no movement this turn; keep the order
+      const outcome = marchArmy(next, content, player.id, armyId, order.x, order.y, false);
+      reconcileMarchOrder(next, armyId, outcome);
+    }
   }
 
   next.turn += 1;
@@ -486,27 +511,78 @@ function formArmy(state: GameState, playerId: string, unitIds: string[]): GameSt
   return state;
 }
 
-/** join-army: adds co-located, army-free units to an existing army. */
+/** Clears a fortify order (only) — reorganizing an army breaks its dug-in stance. */
+function clearFortifyOrder(state: GameState, armyId: string): void {
+  if (state.armyOrders[armyId]?.kind === 'fortify') delete state.armyOrders[armyId];
+}
+
+/**
+ * join-army: adds co-located units to an existing army. A joining unit that is
+ * already in ANOTHER army auto-leaves it first (a remnant of one member
+ * disbands, its order cleaned up); a unit already in the target army is a no-op.
+ * The target army's fortify order (if any) is cleared — the composition changed.
+ */
 function joinArmy(state: GameState, playerId: string, armyId: string, unitIds: string[]): GameState {
   requirePlayer(state, playerId);
-  const members = armyMembers(state, armyId);
-  if (members.length === 0) throw new Error(`Unknown army '${armyId}'`);
-  const anchor = members[0]!;
-  if (anchor.owner !== playerId) throw new Error(`Army '${armyId}' is not owned by ${playerId}`);
+  const anchor = requireArmyAnchor(state, playerId, armyId);
   if (new Set(unitIds).size !== unitIds.length) throw new Error('Duplicate unit in join');
 
   const units = unitIds.map((id) => requireOwnedUnit(state, playerId, id));
-  for (const u of units) {
-    if (u.armyId !== undefined) throw new Error(`Unit '${u.id}' is already in an army`);
+  // Units to actually move in: those not already members of the target army.
+  const joiners = units.filter((u) => u.armyId !== armyId);
+  for (const u of joiners) {
     if (u.plane !== anchor.plane || u.x !== anchor.x || u.y !== anchor.y) {
       throw new Error(`Unit '${u.id}' is not with army '${armyId}'`);
     }
   }
-  if (members.length + units.length > STACK_CAP) {
+  if (armyMembers(state, armyId).length + joiners.length > STACK_CAP) {
     throw new Error(`An army may hold at most ${STACK_CAP} units`);
   }
 
-  for (const u of units) u.armyId = armyId;
+  const vacated = new Set<string>();
+  for (const u of joiners) {
+    if (u.armyId !== undefined) vacated.add(u.armyId);
+    u.armyId = armyId;
+  }
+  // Disband any source army thinned to a stub, then break the target's fortify.
+  for (const src of vacated) cleanupArmies(state, src);
+  clearFortifyOrder(state, armyId);
+  return state;
+}
+
+/**
+ * merge-stack: consolidates ALL of a player's units on one tile into a single
+ * army. If exactly one army is already present its id is kept (loose units join
+ * it); with zero or two-plus armies a fresh army id is minted and everyone
+ * moves into it. Requires ≥2 units on the tile and enforces the stack cap.
+ * Any orders belonging to consumed armies are dropped; the resulting army has
+ * no fortify order.
+ */
+function mergeStack(state: GameState, playerId: string, plane: PlaneId, x: number, y: number): GameState {
+  requirePlayer(state, playerId);
+  const units = stackAt(state, playerId, plane, x, y);
+  if (units.length < 2) {
+    throw new Error(`Need at least 2 units on (${x}, ${y}) to merge a stack`);
+  }
+  if (units.length > STACK_CAP) {
+    throw new Error(`A merged army may hold at most ${STACK_CAP} units`);
+  }
+
+  const armiesPresent = new Set<string>();
+  for (const u of units) if (u.armyId !== undefined) armiesPresent.add(u.armyId);
+
+  // Keep the single existing army's id, else mint a fresh one.
+  let targetId: string;
+  if (armiesPresent.size === 1) {
+    targetId = [...armiesPresent][0]!;
+  } else {
+    targetId = mintEntityId(state, 'army');
+  }
+
+  for (const u of units) u.armyId = targetId;
+  // Drop stale orders from any army that was folded away.
+  for (const src of armiesPresent) if (src !== targetId) delete state.armyOrders[src];
+  clearFortifyOrder(state, targetId);
   return state;
 }
 
@@ -520,37 +596,60 @@ function leaveArmy(state: GameState, playerId: string, unitIds: string[]): GameS
     affected.add(unit.armyId);
     delete unit.armyId;
   }
-  for (const armyId of affected) cleanupArmies(state, armyId);
+  for (const armyId of affected) {
+    cleanupArmies(state, armyId);
+    // An army that survives the departure is no longer dug in.
+    clearFortifyOrder(state, armyId);
+  }
   return state;
 }
 
+/** The result of a single turn's worth of army marching. */
+type MarchOutcome = 'arrived' | 'partial' | 'battled' | 'no-path' | 'blocked';
+
 /**
- * Moves a whole army toward (tx, ty) as one perfectly-stacked group. The army
- * advances tile by tile at the SLOWEST member's remaining movement (a step is
- * taken only while every member still has movement left, then the tile's cost
- * is deducted from each member). Stacking cap and hostile-tile battles work
- * exactly as for a single unit: reaching a tile adjacent to a live lair (or
- * enemy stack) halts the march and resolves a battle whose attacker side is
- * every same-owner unit co-located with the army. Mutates `state` in place.
+ * Marches a whole army toward (tx, ty) as one perfectly-stacked group, as far
+ * as this turn's movement allows. The army advances tile by tile at the SLOWEST
+ * member's remaining movement (a step is taken only while every member still
+ * has movement left, then the tile's cost is deducted from each). Stacking cap
+ * and hostile-tile battles work exactly as for a single unit: reaching a tile
+ * adjacent to a live lair (or enemy stack) halts the march and resolves a
+ * battle whose attacker side is every same-owner unit co-located with the army.
+ *
+ * Returns a MarchOutcome so the order layer can decide whether the standing
+ * move order lives on. When `throwErrors` is true (the interactive move-army
+ * command) an unreachable target or a full destination stack throws the classic
+ * error; when false (advanceTurn auto-march) those surface as 'no-path' /
+ * 'blocked' instead, never throwing. Mutates `state` in place.
  */
-function moveArmyWithBattles(
+function marchArmy(
   state: GameState,
   content: GameContent,
   playerId: string,
   armyId: string,
   tx: number,
   ty: number,
-): void {
+  throwErrors: boolean,
+): MarchOutcome {
   const members = armyMembers(state, armyId);
-  if (members.length === 0) throw new Error(`Unknown army '${armyId}'`);
+  if (members.length === 0) {
+    if (throwErrors) throw new Error(`Unknown army '${armyId}'`);
+    return 'no-path';
+  }
   const anchor = members[0]!;
-  if (anchor.owner !== playerId) throw new Error(`Army '${armyId}' is not owned by ${playerId}`);
+  if (anchor.owner !== playerId) {
+    if (throwErrors) throw new Error(`Army '${armyId}' is not owned by ${playerId}`);
+    return 'no-path';
+  }
 
   const map = state.maps[anchor.plane];
   if (!map) throw new Error(`No map for plane '${anchor.plane}'`);
 
   const path = findPath(map, anchor.x, anchor.y, tx, ty);
-  if (path === null) throw new Error(`No path for army '${armyId}' to (${tx}, ${ty})`);
+  if (path === null) {
+    if (throwErrors) throw new Error(`No path for army '${armyId}' to (${tx}, ${ty})`);
+    return 'no-path';
+  }
 
   const slowest = () => members.reduce((m, u) => Math.min(m, u.moves), Infinity);
 
@@ -565,7 +664,7 @@ function moveArmyWithBattles(
       const stackMates = stackAt(state, anchor.owner, anchor.plane, anchor.x, anchor.y);
       resolveBattle(state, content, anchor, stackMates, step.x, step.y, lair, enemies);
       for (const u of members) u.moves = 0;
-      return;
+      return 'battled';
     }
 
     // Friendly stacking cap: army members plus prior occupants must fit.
@@ -573,9 +672,12 @@ function moveArmyWithBattles(
       (u) => u.armyId !== armyId,
     );
     if (occupants.length + members.length > STACK_CAP) {
-      throw new Error(
-        `Cannot move army '${armyId}' into (${step.x}, ${step.y}): stack is full (max ${STACK_CAP} units)`,
-      );
+      if (throwErrors) {
+        throw new Error(
+          `Cannot move army '${armyId}' into (${step.x}, ${step.y}): stack is full (max ${STACK_CAP} units)`,
+        );
+      }
+      return 'blocked';
     }
 
     const cost = MOVE_COSTS[(getTile(map, step.x, step.y) as Tile).terrain];
@@ -584,6 +686,23 @@ function moveArmyWithBattles(
       u.y = step.y;
       u.moves = Math.max(0, u.moves - cost);
     }
+  }
+
+  return anchor.x === tx && anchor.y === ty ? 'arrived' : 'partial';
+}
+
+/**
+ * Reconciles an army's standing move order with the result of a march:
+ *  - arrived / battled / no-path: the order is DONE — delete it. (A battle
+ *    deliberately stops the march so the player can reassess; an unreachable
+ *    destination is abandoned.)
+ *  - blocked / partial: the destination is not yet reached — keep the order so
+ *    the army resumes marching next turn (armies never forget their destination).
+ * A disbanded army's order is already gone (cleanupArmies); delete is idempotent.
+ */
+function reconcileMarchOrder(state: GameState, armyId: string, outcome: MarchOutcome): void {
+  if (outcome === 'arrived' || outcome === 'battled' || outcome === 'no-path') {
+    delete state.armyOrders[armyId];
   }
 }
 

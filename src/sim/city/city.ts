@@ -7,23 +7,25 @@
  * passes a fresh clone, never the caller's live state).
  */
 
-import type { CityState, UnitState, YieldBundle, YieldKey, BuildOrder, RaceDef, PlaneId } from '../types';
+import type { CityState, UnitState, UnitDef, YieldBundle, YieldKey, BuildOrder, RaceDef, PlaneId } from '../types';
 import type { GameState, GameContent } from '../core/state';
 import type { TerrainId } from '../map/tiles';
-import { getTile, neighbors } from '../map/tiles';
-import { isPassable } from '../units/units';
+import { getTile, inBounds, xyToIndex } from '../map/tiles';
+import { isPassable, chebyshev } from '../units/units';
 
 // ---------------------------------------------------------------------------
 // Economy constants
 // ---------------------------------------------------------------------------
 
-/** Yield each population point produces before race multipliers and bonuses. */
-export const BASE_YIELD_PER_POP: YieldBundle = {
-  food: 2,
-  production: 2,
-  gold: 2,
+/**
+ * Civic yield every population point contributes REGARDLESS of terrain — taxes
+ * and scholars. This is why research is never terrain-bound: a city on barren
+ * rock still researches through its people. Terrain drives food/production/
+ * gold/mana; population drives research (and a little gold).
+ */
+export const CIVIC_YIELD_PER_POP: Readonly<Pick<YieldBundle, 'research' | 'gold'>> = {
   research: 1,
-  mana: 0.5,
+  gold: 0.5,
 };
 
 /** Food consumed per population point per turn. */
@@ -42,54 +44,87 @@ export const CAPITAL_START_POP = 3;
 /** Minimum spacing (Chebyshev, same plane) between city centers. */
 export const MIN_CITY_SPACING = 3;
 
+/**
+ * Catchment reach: a city works tiles within this Chebyshev radius of its
+ * center — the 5x5 block (radius 2). Each tile belongs to at most ONE city.
+ */
+export const CATCHMENT_RADIUS = 2;
+
 export const YIELD_KEYS: readonly YieldKey[] = ['food', 'production', 'gold', 'research', 'mana'];
 
 /**
- * Terrain yield contributions. Each of the 8 tiles around a city adds these
- * small per-turn bonuses. Every one of the 30 terrain ids appears exactly
- * once. Themes: grasslands feed, forests/hills/volcanic terrain build,
- * arcane/luminous terrain leans mana/research.
+ * The primary economy: what one worked tile of each terrain yields per turn.
+ * Every one of the 30 terrain ids appears exactly once. These are consumed by
+ * the worked-tile model (see `workedTiles`) — a city's population works the
+ * best tiles of its catchment, so terrain is now the dominant lever on a
+ * city's ceiling (a grassland basin out-eats a tundra site roughly 2:1+).
+ *
+ * Themes:
+ *  - Meridia (normal world): grassland feeds, forest/hills/mountains build,
+ *    desert trades, swamp/mountains trickle mana, tundra is sparse.
+ *  - Umbra (dark world): mana-rich, food-poor.
+ *  - Lumina (light world): food-and-mana, some research.
+ *  - Water: `shore` is workable (fishing) even though land units can't stand on
+ *    it; `ocean` is workable but yields nothing.
+ *  - School dimensions: exotic and rich, but no city can be founded there yet.
  */
 export const TERRAIN_YIELDS: Record<TerrainId, Partial<YieldBundle>> = {
-  // Universal water
-  ocean: { food: 1 },
-  shore: { food: 1, gold: 1 },
-  // Meridia
-  grassland: { food: 1 },
-  forest: { production: 1 },
-  hills: { production: 1 },
-  mountains: { production: 1, mana: 0.5 },
-  desert: { gold: 1 },
-  swamp: { mana: 1 },
-  tundra: { production: 0.5 },
-  // Umbra
-  'ashen-waste': { production: 0.5, mana: 0.5 },
-  bonefield: { mana: 1 },
-  'gloom-forest': { production: 1, mana: 0.5 },
-  // Lumina
-  'radiant-plain': { food: 1, research: 0.5 },
-  'crystal-forest': { research: 1, mana: 0.5 },
-  'aurora-peaks': { mana: 1, research: 0.5 },
-  // Empyrean (Life)
-  'cloud-shoal': { food: 1, mana: 0.5 },
-  'gilded-reef': { gold: 1, mana: 0.5 },
-  'sanctum-spire': { mana: 1, research: 1 },
-  // Charnel Deep (Death)
-  'bone-marsh': { mana: 1 },
-  'blood-fen': { mana: 1, food: 0.5 },
-  blackspire: { mana: 1, production: 0.5 },
-  // Maelstrom (Chaos)
-  'cinder-flat': { production: 1 },
-  'magma-field': { production: 1, mana: 0.5 },
-  'brimstone-spire': { production: 1, mana: 1 },
-  // Wildroot (Nature)
-  'vine-tangle': { food: 1, production: 0.5 },
-  mossmire: { food: 1, mana: 0.5 },
-  'canopy-spire': { production: 1, mana: 0.5 },
-  // Aether (Sorcery)
-  'mirror-flat': { research: 1 },
-  'prism-shard': { research: 1, mana: 0.5 },
-  'starlit-void': { mana: 1, research: 1 },
+  // Universal water — shore fishes, open ocean gives nothing.
+  ocean: {},
+  shore: { food: 1.5, gold: 0.5 },
+  // Meridia (normal world)
+  grassland: { food: 2 },
+  forest: { food: 1, production: 1 },
+  hills: { production: 2 },
+  mountains: { production: 2, mana: 0.5 },
+  desert: { gold: 1.5 },
+  swamp: { food: 1, mana: 0.5 },
+  tundra: { food: 0.5, production: 0.5 },
+  // Umbra (dark world) — mana-rich, food-poor.
+  'ashen-waste': { production: 1, mana: 0.5 },
+  bonefield: { gold: 0.5, mana: 1.5 },
+  'gloom-forest': { production: 1, mana: 1 },
+  // Lumina (light world) — food and mana, a little research.
+  'radiant-plain': { food: 2, mana: 0.5 },
+  'crystal-forest': { food: 1, research: 1, mana: 0.5 },
+  'aurora-peaks': { research: 1, mana: 1.5 },
+  // Empyrean (Life dimension) — rich.
+  'cloud-shoal': { food: 2, mana: 1 },
+  'gilded-reef': { food: 1, gold: 2, mana: 1 },
+  'sanctum-spire': { research: 2, mana: 2 },
+  // Charnel Deep (Death dimension) — rich, mana-leaning.
+  'bone-marsh': { food: 0.5, mana: 2 },
+  'blood-fen': { food: 1, mana: 2 },
+  blackspire: { production: 1, mana: 2 },
+  // Maelstrom (Chaos dimension) — rich production.
+  'cinder-flat': { production: 2 },
+  'magma-field': { production: 2, mana: 1 },
+  'brimstone-spire': { production: 2, mana: 2 },
+  // Wildroot (Nature dimension) — rich food.
+  'vine-tangle': { food: 2, production: 1 },
+  mossmire: { food: 2, mana: 1 },
+  'canopy-spire': { food: 1, production: 2, mana: 1 },
+  // Aether (Sorcery dimension) — rich research/mana.
+  'mirror-flat': { research: 2 },
+  'prism-shard': { research: 2, mana: 1 },
+  'starlit-void': { research: 2, mana: 2 },
+};
+
+/**
+ * Weights turning a tile's yield bundle into a single desirability score, used
+ * to rank which tiles a city's population works first (best-first). Food is
+ * prized highest — it feeds the very workers doing the working and drives
+ * growth — then production (builds the empire), then the softer axes. Because
+ * food dominates, a city naturally assigns its people to eat first, then spill
+ * onto production/gold/mana tiles once its food tiles are taken. Ties are
+ * broken by tile index for full determinism (see `workedTiles`).
+ */
+export const DESIRABILITY_WEIGHTS: YieldBundle = {
+  food: 4,
+  production: 3,
+  gold: 2,
+  research: 2,
+  mana: 2,
 };
 
 // ---------------------------------------------------------------------------
@@ -128,71 +163,197 @@ function multiplyPartial(target: YieldBundle, partial: Partial<YieldBundle> | un
   }
 }
 
+/** A tile in a city's catchment, with its precomputed yields and ranking keys. */
+interface WorkTile {
+  x: number;
+  y: number;
+  terrain: TerrainId;
+  /** Raw terrain food (pre-multiplier) — the growth-relevant axis. */
+  food: number;
+  /** Desirability score (see DESIRABILITY_WEIGHTS) for best-first assignment. */
+  desirability: number;
+  /** Row-major tile index — the final, total tie-breaker. */
+  index: number;
+}
+
+/** Weighted desirability of a raw terrain yield bundle. */
+function tileDesirability(y: Partial<YieldBundle>): number {
+  let score = 0;
+  for (const key of YIELD_KEYS) score += (y[key] ?? 0) * DESIRABILITY_WEIGHTS[key];
+  return score;
+}
+
+/**
+ * Which city (id) owns the tile (x, y) on a plane, or null if unclaimed.
+ * Ownership is deterministic:
+ *   1. A city standing exactly on the tile always owns it (its own center).
+ *   2. Otherwise the EARLIEST city in `state.cities` whose catchment (Chebyshev
+ *      radius CATCHMENT_RADIUS) reaches the tile claims it — earlier-founded
+ *      cities win overlap disputes.
+ */
+function tileOwner(state: GameState, plane: PlaneId, x: number, y: number): string | null {
+  for (const c of state.cities) {
+    if (c.plane === plane && c.x === x && c.y === y) return c.id;
+  }
+  for (const c of state.cities) {
+    if (c.plane !== plane) continue;
+    if (chebyshev(c.x, c.y, x, y) <= CATCHMENT_RADIUS) return c.id;
+  }
+  return null;
+}
+
+/**
+ * The tiles a city actually owns and may work: the in-bounds tiles of its 5x5
+ * catchment (Chebyshev radius CATCHMENT_RADIUS) that no earlier city has
+ * claimed. A city always owns its own center. Exported for the UI to
+ * visualize a city's reach. Pure read of `state`.
+ */
+export function catchmentTiles(state: GameState, city: CityState): { x: number; y: number }[] {
+  const map = state.maps[city.plane];
+  if (!map) return [];
+  const out: { x: number; y: number }[] = [];
+  for (let dy = -CATCHMENT_RADIUS; dy <= CATCHMENT_RADIUS; dy++) {
+    for (let dx = -CATCHMENT_RADIUS; dx <= CATCHMENT_RADIUS; dx++) {
+      const x = city.x + dx;
+      const y = city.y + dy;
+      if (!inBounds(x, y, map.width, map.height)) continue;
+      if (tileOwner(state, city.plane, x, y) === city.id) out.push({ x, y });
+    }
+  }
+  return out;
+}
+
+/** The owned catchment split into the (free) center tile and the rest. */
+function catchmentInfo(state: GameState, city: CityState): { center: WorkTile | null; others: WorkTile[] } {
+  const map = state.maps[city.plane];
+  if (!map) return { center: null, others: [] };
+  let center: WorkTile | null = null;
+  const others: WorkTile[] = [];
+  for (const { x, y } of catchmentTiles(state, city)) {
+    const tile = getTile(map, x, y);
+    if (!tile) continue;
+    const yld = TERRAIN_YIELDS[tile.terrain] ?? {};
+    const wt: WorkTile = {
+      x,
+      y,
+      terrain: tile.terrain,
+      food: yld.food ?? 0,
+      desirability: tileDesirability(yld),
+      index: xyToIndex(x, y, map.width),
+    };
+    if (x === city.x && y === city.y) center = wt;
+    else others.push(wt);
+  }
+  return { center, others };
+}
+
+/** Owned catchment tiles ranked best-first by desirability, ties by tile index. */
+function rankedByDesirability(others: readonly WorkTile[]): WorkTile[] {
+  return others.slice().sort((a, b) => b.desirability - a.desirability || a.index - b.index);
+}
+
+/**
+ * The tiles a city is currently working: its free center plus the best
+ * `population` tiles of its catchment, chosen best-first by desirability with
+ * ties broken by tile index (fully deterministic). Each population point works
+ * exactly one tile; if the catchment has fewer tiles than population, the
+ * surplus population works nothing (it still yields civic research/gold).
+ * Exported for the UI. The `content` parameter is accepted for signature
+ * stability with the rest of the city API.
+ */
+export function workedTiles(
+  _state: GameState,
+  _content: GameContent,
+  city: CityState,
+): { x: number; y: number }[] {
+  const { center, others } = catchmentInfo(_state, city);
+  const ranked = rankedByDesirability(others);
+  const out: { x: number; y: number }[] = [];
+  if (center) out.push({ x: center.x, y: center.y });
+  const n = Math.min(city.population, ranked.length);
+  for (let i = 0; i < n; i++) {
+    const t = ranked[i] as WorkTile;
+    out.push({ x: t.x, y: t.y });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Yields
 // ---------------------------------------------------------------------------
 
 /**
- * The per-turn yields a city produces. Model, in order:
- *   1. base: population * BASE_YIELD_PER_POP, each axis scaled by the race's
- *      yield multiplier.
- *   2. terrain: small bonuses from the 8 tiles around the city.
- *   3. flats: building flat yields + empire-wide completed-study flat yields.
- *   4. multipliers: building yieldMultipliers * study yieldMultipliers.
- * Flats are fully summed before any multiplier is applied. Each axis is
- * floored once at the very end.
+ * Applies the yield pipeline to a raw (worked-tile + civic) bundle:
+ *   1. race yield multipliers scale the raw worked-tile + civic total;
+ *   2. building flat yields, then completed-study flat yields, are added;
+ *   3. building yieldMultipliers, then study yieldMultipliers, apply;
+ *   4. each axis is floored once at the very end.
+ * Flats are fully summed before any multiplier. Building/study flats are NOT
+ * race-scaled (only the population's own output is).
  */
-export function computeCityYields(state: GameState, content: GameContent, city: CityState): YieldBundle {
+function applyYieldPipeline(
+  state: GameState,
+  content: GameContent,
+  city: CityState,
+  raw: YieldBundle,
+): YieldBundle {
   const race = requireRace(content, city.raceId);
-  const map = state.maps[city.plane];
-  if (!map) throw new Error(`No map for plane '${city.plane}'`);
-
   const flat = emptyBundle();
 
-  // 1. Base from population, scaled by race yield multipliers.
-  for (const key of YIELD_KEYS) {
-    flat[key] += city.population * BASE_YIELD_PER_POP[key] * race.yields[key];
-  }
+  // 1. Race multipliers scale the population's worked-tile + civic output.
+  for (const key of YIELD_KEYS) flat[key] = raw[key] * race.yields[key];
 
-  // 2. Terrain contribution from the 8 surrounding tiles.
-  for (const n of neighbors(city.x, city.y, map.width, map.height)) {
-    const tile = getTile(map, n.x, n.y);
-    if (tile) addPartial(flat, TERRAIN_YIELDS[tile.terrain]);
-  }
-
-  // Prepare multipliers (start at identity).
-  const mult: YieldBundle = { food: 1, production: 1, gold: 1, research: 1, mana: 1 };
-
-  // 3a. Building flat yields.
+  // 2. Building then completed-study flat yields.
   for (const bId of city.buildings) {
     const b = content.buildings[bId];
     if (b) addPartial(flat, b.effects.yields);
   }
-
-  // 3b. Empire-wide completed-study flat yields.
   const completed = ownerCompletedStudies(state, city.owner);
   for (const sId of completed) {
     const s = content.studies[sId];
     if (s?.effects.cityEffects) addPartial(flat, s.effects.cityEffects.yields);
   }
 
-  // 4a. Building multipliers.
+  // 3. Building then study multipliers.
+  const mult: YieldBundle = { food: 1, production: 1, gold: 1, research: 1, mana: 1 };
   for (const bId of city.buildings) {
     const b = content.buildings[bId];
     if (b) multiplyPartial(mult, b.effects.yieldMultipliers);
   }
-
-  // 4b. Study multipliers.
   for (const sId of completed) {
     const s = content.studies[sId];
     if (s?.effects.cityEffects) multiplyPartial(mult, s.effects.cityEffects.yieldMultipliers);
   }
 
+  // 4. Floor each axis once.
   const out = emptyBundle();
-  for (const key of YIELD_KEYS) {
-    out[key] = Math.floor(flat[key] * mult[key]);
-  }
+  for (const key of YIELD_KEYS) out[key] = Math.floor(flat[key] * mult[key]);
   return out;
+}
+
+/**
+ * The per-turn yields a city produces under the worked-land model:
+ *   raw = sum of TERRAIN_YIELDS over the city's worked tiles (center + the best
+ *         `population` catchment tiles) + civic yield (CIVIC_YIELD_PER_POP ×
+ *         population — taxes/scholars, so research is never terrain-bound);
+ *   then the yield pipeline (race multipliers, building/study flats, building/
+ *   study multipliers, floor) is applied. See `applyYieldPipeline`.
+ */
+export function computeCityYields(state: GameState, content: GameContent, city: CityState): YieldBundle {
+  const map = state.maps[city.plane];
+  if (!map) throw new Error(`No map for plane '${city.plane}'`);
+  requireRace(content, city.raceId); // validate race up front
+
+  const raw = emptyBundle();
+  for (const { x, y } of workedTiles(state, content, city)) {
+    const tile = getTile(map, x, y);
+    if (tile) addPartial(raw, TERRAIN_YIELDS[tile.terrain]);
+  }
+  // Civic yields: research and a little gold from the people themselves.
+  raw.research += city.population * CIVIC_YIELD_PER_POP.research;
+  raw.gold += city.population * CIVIC_YIELD_PER_POP.gold;
+
+  return applyYieldPipeline(state, content, city, raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,9 +374,57 @@ export function cityHousing(state: GameState, content: GameContent, city: CitySt
   return housing;
 }
 
-/** Maximum population this city may grow to. */
+/**
+ * The population ceiling imposed by food: the largest population whose food the
+ * city's worked tiles can actually cover at current multipliers.
+ *
+ * Math: a city of population P works its free center plus its best P catchment
+ * tiles (best-first by desirability — see `workedTiles` — which, because food
+ * is the top-weighted axis, assigns people to eat first). Let food(P) be the
+ * floored food that arrangement produces after the full pipeline (race
+ * multiplier, building/study food flats and multipliers). Since each pop eats
+ * FOOD_PER_POP (=1), P is self-feeding when food(P) >= P. The cap is the
+ * largest P for which food(P') >= P' holds for every P' from 1..P (the first
+ * crossover), so a city AT its cap is exactly break-even — surplus 0, no
+ * growth, and no starvation thrash. Because food(P) here is computed from the
+ * SAME worked-tile selection that `computeCityYields` uses, the cap and the
+ * live food yield can never disagree.
+ *
+ * Poor land (few high-food tiles, or per-tile food below the 1/pop upkeep)
+ * crosses over almost immediately and caps low and permanently; a grassland
+ * basin (many food-2 tiles) caps at or above the housing limit.
+ */
+export function cityFoodPotentialCap(state: GameState, content: GameContent, city: CityState): number {
+  const { center, others } = catchmentInfo(state, city);
+  const ranked = rankedByDesirability(others);
+  const centerFood = center ? center.food : 0;
+
+  const foodAt = (p: number): number => {
+    const raw = emptyBundle();
+    raw.food = centerFood;
+    const n = Math.min(p, ranked.length);
+    for (let i = 0; i < n; i++) raw.food += (ranked[i] as WorkTile).food;
+    return applyYieldPipeline(state, content, city, raw).food;
+  };
+
+  // Walk P upward from 1; stop at the first population the land can't feed.
+  const hardMax = BASE_HOUSING + cityHousing(state, content, city) + ranked.length + 1;
+  let cap = 1;
+  for (let p = 1; p <= hardMax; p++) {
+    if (foodAt(p) >= p) cap = p;
+    else break;
+  }
+  return Math.max(1, cap);
+}
+
+/**
+ * Maximum population this city may grow to: the tighter of its housing cap
+ * (BASE_HOUSING + building/study housing) and its food-potential cap. Housing
+ * lets a city hold people; food decides whether the land can feed them.
+ */
 export function cityPopulationCap(state: GameState, content: GameContent, city: CityState): number {
-  return BASE_HOUSING + cityHousing(state, content, city);
+  const housingCap = BASE_HOUSING + cityHousing(state, content, city);
+  return Math.min(housingCap, cityFoodPotentialCap(state, content, city));
 }
 
 /** Additive growth-rate bonus from buildings + completed studies (0.1 = +10%). */
@@ -341,8 +550,11 @@ export function buildBlockReason(
   // kind === 'unit'
   const def = content.units[id];
   if (!def) return `Unknown unit '${id}'`;
-  if (def.role === 'summon' || 'school' in def.origin) {
-    return `'${def.name}' is a summon and cannot be trained in a city`;
+  // Summons and wild monsters are conjured through the (future) casting
+  // interface, never queued in a city's production. School-origin units are
+  // summons by construction.
+  if (def.role === 'summon' || def.role === 'monster' || 'school' in def.origin) {
+    return `'${def.name}' is summoned, not trained`;
   }
   const originOk = 'generic' in def.origin || ('race' in def.origin && def.origin.race === city.raceId);
   if (!originOk) return `${race.name} cannot train '${def.name}'`;
@@ -420,7 +632,12 @@ export function tickProduction(
     } else {
       const def = content.units[order.id];
       if (def) {
-        spawnUnit(state, content, city.owner, order.id, city.plane, city.x, city.y);
+        // Regiments have provenance: name the muster by home city and order of
+        // raising ("1st Grokhaz Orc Warriors"). Record first so the ordinal
+        // reflects this regiment's number.
+        recordRaised(city, order.id);
+        const unit = spawnUnit(state, content, city.owner, order.id, city.plane, city.x, city.y);
+        unit.name = provenanceName(city, def);
       }
     }
     // Loop: any overflow may progress the next order.
@@ -436,6 +653,49 @@ export function mintEntityId(state: GameState, prefix: 'city' | 'unit' | 'army')
   const id = `${prefix}-${state.nextEntityId}`;
   state.nextEntityId += 1;
   return id;
+}
+
+// ---------------------------------------------------------------------------
+// Regiment provenance ("1st Grokhaz Orc Warriors")
+// ---------------------------------------------------------------------------
+
+/**
+ * English ordinal for n >= 1: 1st, 2nd, 3rd, 4th, ... with the 11th/12th/13th
+ * exception ("th" despite ending in 1/2/3) and the 21st/22nd/23rd resumption.
+ */
+export function ordinal(n: number): string {
+  const rem100 = n % 100;
+  const rem10 = n % 10;
+  let suffix = 'th';
+  if (rem100 < 11 || rem100 > 13) {
+    if (rem10 === 1) suffix = 'st';
+    else if (rem10 === 2) suffix = 'nd';
+    else if (rem10 === 3) suffix = 'rd';
+  }
+  return `${n}${suffix}`;
+}
+
+/**
+ * Records that a city has raised one more regiment of unit def `defId`,
+ * lazily initializing `city.raised`, and returns the new running count (1 for
+ * the first regiment of that def). The state-construction layer can call this
+ * for starting units so their provenance shares the same counter.
+ */
+export function recordRaised(city: CityState, defId: string): number {
+  if (!city.raised) city.raised = {};
+  const next = (city.raised[defId] ?? 0) + 1;
+  city.raised[defId] = next;
+  return next;
+}
+
+/**
+ * The provenance name for a regiment of `def` raised in `city`, e.g.
+ * "1st Grokhaz Orc Warriors". Reads the CURRENT `raised` count for the def
+ * (call `recordRaised` first), defaulting to a 1st muster if none is recorded.
+ */
+export function provenanceName(city: CityState, def: UnitDef): string {
+  const count = city.raised?.[def.id] ?? 1;
+  return `${ordinal(count)} ${city.name} ${def.name}`;
 }
 
 // ---------------------------------------------------------------------------
