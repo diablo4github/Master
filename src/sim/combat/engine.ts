@@ -46,16 +46,21 @@ import {
   inField,
   homeEdgeX,
   engagedFigures,
+  rangedSaturation,
   sampleBinomial,
   recordCasualties,
   HIT_BASE,
   HIT_K,
   HIT_FLOOR,
   HIT_CEIL,
+  RANGED_PIERCE_BASE,
+  RANGED_PIERCE_FALLOFF,
   EVASION_PER_DISCIPLINE,
   EVASION_FLANK,
   EVASION_REAR,
   EVASION_ROUTING,
+  EVASION_FLYING_VS_RANGED,
+  TRAMPLE_SWEEP_PER_MASS,
   ATTACK_FLANK_BONUS,
   ATTACK_REAR_BONUS,
   PACK_HUNTER_BONUS,
@@ -278,7 +283,16 @@ export function meleeAttack(
     1 +
     (fi.rear ? REAR_EXTRA_FACE : fi.flank ? FLANK_EXTRA_FACE : 0) +
     (packPartner ? PACK_EXTRA_FACE : 0);
-  const engaged = engagedFigures(attacker, target, faceWidth);
+  let engaged = engagedFigures(attacker, target, faceWidth);
+
+  // TRAMPLE: a great monster does not duel one man at a time — its bulk bowls a
+  // mass-scaled SWATH of a formation over with each swing (see TRAMPLE in
+  // internal.ts). Armor + min-1 still apply per figure caught below; this only
+  // widens how many of the formation the swing reaps.
+  if (target.figures >= 2 && hasAbility(attacker.def, 'trample')) {
+    const sweep = Math.round(attacker.def.combat.mass * TRAMPLE_SWEEP_PER_MASS);
+    engaged = Math.min(target.figures, Math.max(engaged, sweep));
+  }
   const landed = sampleBinomial(ctx.rng, engaged, pHit);
   const total = landed * perHit;
 
@@ -389,14 +403,31 @@ export function rangedVolley(ctx: BattleContext, c: Combatant, target: Combatant
 
   let evasion = target.def.combat.discipline * EVASION_PER_DISCIPLINE;
   if (target.status === 'routing') evasion += EVASION_ROUTING;
+  // A darting aerial target is hard to feather out of the sky (ranged only).
+  if (hasAbility(target.def, 'flying')) evasion += EVASION_FLYING_VS_RANGED;
   let pHit = clamp(HIT_BASE + HIT_K * (r.attack - evasion), HIT_FLOOR, HIT_CEIL);
   if (isCover(ctx.field, target.x, target.y)) pHit = Math.max(HIT_FLOOR, pHit - COVER_HIT_PENALTY);
-  const perHit = Math.max(1, r.damage - target.def.combat.armor);
 
-  // Ranged fire is NOT frontage-limited: every bow in the formation may loose.
-  // Accuracy (pHit) already scales the volume of hits, so massed archery stays
-  // proportionate to the number firing. Batched to avoid a draw per arrow.
-  const landed = sampleBinomial(ctx.rng, c.figures, pHit);
+  // SATURATION: every bow looses at a formation, but only a mass-scaled arc of
+  // the volley can even aim at a lone great beast (rangedSaturation) — the rest
+  // sail past. So the number of arrows with a real CHANCE is capped by the
+  // target's presented bulk, not the whole regiment. (figuresFiring in the
+  // event stays the full regiment — they all draw; most simply cannot aim true.)
+  const firers = Math.min(c.figures, rangedSaturation(target));
+  const landed = sampleBinomial(ctx.rng, firers, pHit);
+
+  // ARMOR SOAK: an arrow that beats the armor punches clean through (no min-1);
+  // one that cannot merely glances off, save a pierce-chance residue that finds
+  // a weak joint. See the RANGED ARMOR SOAK block in internal.ts.
+  const surplus = r.damage - target.def.combat.armor;
+  let dealt: number;
+  if (surplus >= 1) {
+    dealt = landed * surplus;
+  } else {
+    const pierceChance = RANGED_PIERCE_BASE * Math.pow(RANGED_PIERCE_FALLOFF, -surplus);
+    dealt = sampleBinomial(ctx.rng, landed, pierceChance); // 1 dmg per pierced arrow
+  }
+
   c.ammo -= 1;
   c.facing = dirIndexTo(c.x, c.y, target.x, target.y);
 
@@ -412,14 +443,14 @@ export function rangedVolley(ctx: BattleContext, c: Combatant, target: Combatant
     ammoLeft: c.ammo,
   });
 
-  const res = applyDamage(target, landed * perHit);
+  const res = applyDamage(target, dealt);
   ctx.events.push({
     type: 'damage',
     tick: ctx.tick,
     targetId: target.id,
     sourceId: c.id,
     kind: 'ranged',
-    amount: landed * perHit,
+    amount: dealt,
     figuresLost: res.figuresLost,
     figuresAfter: target.figures,
     hpAfter: totalHp(target),

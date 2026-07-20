@@ -53,9 +53,11 @@ export const MAX_TICKS = 400;
 //    now *why flanking kills* — on top of the existing to-hit/evasion swing.
 //
 // Because only the front trades, casualties accrue a slice at a time and lines
-// grind instead of annihilating in 2-3 exchanges. Ranged fire is NOT frontage-
-// limited (every bow may loose); area effects (breath/trample) reap whole
-// swaths of massed ranks (see abilities.ts).
+// grind instead of annihilating in 2-3 exchanges. Ranged fire is not frontage-
+// limited against a FORMATION (every bow may loose at massed ranks) but IS
+// saturation-limited against a lone great beast (see RANGED SATURATION below);
+// area effects (breath / a trampler's swath) reap whole swaths of massed ranks
+// (see abilities.ts and TRAMPLE below).
 // ---------------------------------------------------------------------------
 
 /** Men per tile-face a formation can bring to bear in one melee exchange. */
@@ -70,6 +72,80 @@ export const REAR_EXTRA_FACE = 1.0;
 export const PACK_EXTRA_FACE = 0.5;
 /** Binomial draws at or below this size are rolled exactly; larger are batched. */
 export const BINOMIAL_EXACT_MAX = 24;
+
+// ---------------------------------------------------------------------------
+// RANGED SATURATION — the geometry of shooting a single great beast.
+//
+// A 340-bow regiment volleys at a FORMATION and every arrow finds a rank to
+// fall on: massed ranks present an effectively unbounded mark, so the whole
+// volley tells and accuracy alone scales the hits (see rangedVolley). But a
+// SINGULAR great monster is one body standing in the field. Most of a
+// 340-arrow volley cannot aim usefully at a lone wyvern — arrows that would
+// "hit" its tile sail past empty air to either side. Only a mass-scaled arc of
+// the volley gets a real chance at the beast:
+//
+//   effectiveFirers        = min(figures, saturation(target))
+//   saturation(formation)  = ∞                       (spread ranks: full volley)
+//   saturation(lone beast) = BASE + mass × PER_MASS  (its presented bulk)
+//
+// A wyvern (mass 2) eats ~46 aimed shots' worth of chance per volley, not 340;
+// a hill giant (mass 5), a bigger silhouette, ~70. THIS is why massed archery
+// cannot cheaply delete a great monster (DESIGN.md "Mundane vs mythic"): the
+// volley SATURATES and the rest of the arrows are wasted on air. Saturation is
+// a property of the TARGET's bulk, never a bonus-vs-tag — a big formation of
+// men and a swarm of beasts both present a full mark; only a lone body does not.
+// ---------------------------------------------------------------------------
+
+/** Aimed shots a lone beast presents before its own bulk, per volley. */
+export const RANGED_SATURATION_BASE = 24;
+/** Extra aimed shots per point of the beast's mass (a bigger silhouette). */
+export const RANGED_SATURATION_PER_MASS = 8;
+
+// ---------------------------------------------------------------------------
+// RANGED ARMOR SOAK. A melee blade grinding at close quarters always finds a
+// gap (melee keeps its min-1). An arrow does not: one that cannot defeat the
+// armor simply glances off. Per landed arrow, against the target's flat armor:
+//
+//   surplus = ranged.damage − armor
+//   surplus ≥ 1 : every arrow deals `surplus`      (clean punch-through, no min-1)
+//   surplus ≤ 0 : SOAKED — only arrows that find a weak joint tell, at a pierce
+//                 CHANCE that starts at RANGED_PIERCE_BASE when the armor merely
+//                 equals the arrow and falls geometrically (× RANGED_PIERCE_
+//                 FALLOFF per further point of armor). Each such arrow deals 1 —
+//                 an armor-piercing residue so attrition still converges on a
+//                 monster nobody can otherwise scratch.
+//
+// A hill giant (armor 3) shrugs off orc bows (damage 2 → deficit 1) almost
+// entirely; arrows that merely match a foe's armor (deficit 0) still bleed it,
+// which is what keeps archers lethal to ordinary armored infantry (kiting).
+// ---------------------------------------------------------------------------
+
+/** Pierce chance for a soaked arrow when armor exactly equals the arrow. */
+export const RANGED_PIERCE_BASE = 0.5;
+/** Pierce chance multiplier for each further point armor exceeds the arrow. */
+export const RANGED_PIERCE_FALLOFF = 0.12;
+
+/**
+ * A fast, aerial target is hard to hit with massed arrows — emergent evasion
+ * vs RANGED only. (Melee reach still governs who can touch a flyer at all; this
+ * is not that. It is why a diving wyvern, unlike a plodding armored regiment of
+ * the same nominal armor, is not simply feathered out of the sky.)
+ */
+export const EVASION_FLYING_VS_RANGED = 7;
+
+// ---------------------------------------------------------------------------
+// TRAMPLE — a singular great monster's melee is not one duelist's blow. A hill
+// giant wading into a shield wall bowls a SWATH of men over with every swing
+// (the melee analog of a breath sweep). Left to the plain frontage model a lone
+// giant would swing as ONE figure and merely tickle a 400-man regiment; trample
+// widens its effective attack front to a mass-scaled swath, so one giant reaps
+// dozens over a few ticks — bloody enough to break a green line's nerve. Armor
+// and the min-1 melee rule still apply to each figure caught, so it is attrition
+// through massed ranks, not an armor-ignoring blast like breath.
+// ---------------------------------------------------------------------------
+
+/** Figures a trampler's swing sweeps through a formation, per point of mass. */
+export const TRAMPLE_SWEEP_PER_MASS = 1.0;
 
 /** To-hit curve. pHit = clamp(BASE + K*(attack - evasion), FLOOR, CEIL). */
 export const HIT_BASE = 0.5;
@@ -302,6 +378,19 @@ export function presentedFront(target: Combatant): number {
   if (target.figures >= 2) return BASE_FRONTAGE;
   const crowd = Math.round(target.def.combat.mass * MONSTER_CROWD_PER_MASS);
   return Math.max(MIN_CROWD, Math.min(BASE_FRONTAGE, crowd));
+}
+
+/**
+ * How many of a volley's arrows can meaningfully AIM at `target` this shot. A
+ * formation (≥2 figures) presents an unbounded mark — the whole volley may
+ * loose (accuracy scales the hits). A SINGULAR great beast presents only its
+ * mass-scaled bulk, so most of a big regiment's arrows sail past it (see the
+ * RANGED SATURATION block above). This is the sole reason massed archery cannot
+ * cheaply delete a great monster — geometry, never a bonus-vs-tag.
+ */
+export function rangedSaturation(target: Combatant): number {
+  if (target.figures >= 2) return Number.POSITIVE_INFINITY;
+  return RANGED_SATURATION_BASE + target.def.combat.mass * RANGED_SATURATION_PER_MASS;
 }
 
 /**
