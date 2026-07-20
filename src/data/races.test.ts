@@ -26,6 +26,8 @@ describe('races', () => {
     expect(generic[0]?.id).toBe('orcs');
 
     const orcs = RACES.orcs;
+    expect(orcs).toBeDefined();
+    if (!orcs) throw new Error('unreachable');
     expect(orcs.homeWorld).toBe('meridia');
     expect(orcs.growthRate).toBe(1.0);
     expect(orcs.yields).toEqual({
@@ -39,6 +41,8 @@ describe('races', () => {
 
   it('gives humans life affinity and the full temple chain', () => {
     const humans = RACES.humans;
+    expect(humans).toBeDefined();
+    if (!humans) throw new Error('unreachable');
     expect(humans.schoolAffinity).toBe('life');
 
     const templeChain = [
