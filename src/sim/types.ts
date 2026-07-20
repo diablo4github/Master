@@ -148,6 +148,54 @@ export interface RaceDef {
 }
 
 // ---------------------------------------------------------------------------
+// Yields & effects (shared by buildings and studies)
+// ---------------------------------------------------------------------------
+
+/** The five per-turn resources a city produces. */
+export interface YieldBundle {
+  food: number;
+  production: number;
+  gold: number;
+  /** Magical research — the only research axis in the game. */
+  research: number;
+  mana: number;
+}
+
+export type YieldKey = keyof YieldBundle;
+
+/**
+ * Structured, sim-consumable effects. All fields optional; omitted = no
+ * effect on that axis. Multipliers stack multiplicatively, flats stack
+ * additively, flats apply before multipliers.
+ */
+export interface CityEffects {
+  /** Flat per-turn yield added to the city. */
+  yields?: Partial<YieldBundle>;
+  /** Yield multipliers, 1.0 = no change (e.g. marketplace gold 1.25). */
+  yieldMultipliers?: Partial<YieldBundle>;
+  /** Additive bonus to the city's population growth rate (0.1 = +10%). */
+  growthBonus?: number;
+  /** Raises the city's maximum population. */
+  housing?: number;
+  /** Flat defense added to the city garrison in sieges. */
+  defenseBonus?: number;
+  /**
+   * Points of unrest suppressed (temples are the classic source). The unrest
+   * system lands with the empire-management milestone; data ships now.
+   */
+  unrestReduction?: number;
+}
+
+export interface StudyEffects {
+  /** Empire-wide per-turn yields (applied to every owned city). */
+  cityEffects?: CityEffects;
+  /** Building ids this study unlocks for construction. */
+  unlocksBuildings?: readonly string[];
+  /** Unit ids this study unlocks for training. */
+  unlocksUnits?: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
 // Buildings & magical studies (research)
 // ---------------------------------------------------------------------------
 
@@ -159,7 +207,7 @@ export interface BuildingDef {
   requires?: string;
   cost: number;
   upkeep: number;
-  effects: string; // structured effects come later; prose for now
+  effects: CityEffects;
   description: string;
 }
 
@@ -169,7 +217,7 @@ export interface StudyDef {
   /** Research cost in research points. */
   cost: number;
   requires?: readonly string[];
-  effects: string;
+  effects: StudyEffects;
   description: string;
 }
 
@@ -191,8 +239,13 @@ export interface UnitDef {
   id: string;
   name: string;
   role: UnitRole;
-  /** Race id for mundane units; school id for summons. */
-  origin: { race: string } | { school: SchoolId };
+  /**
+   * Race id for race-specific units; school id for summons; generic for
+   * units any race can train (e.g. settlers).
+   */
+  origin: { race: string } | { school: SchoolId } | { generic: true };
+  /** Production cost to train (mundane units). */
+  cost?: number;
   attack: number;
   defense: number;
   hits: number;
@@ -204,6 +257,47 @@ export interface UnitDef {
   summonCost?: number;
   abilities: readonly string[];
   description: string;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime entities (cities & units on the map)
+// ---------------------------------------------------------------------------
+
+export interface BuildOrder {
+  kind: 'building' | 'unit';
+  /** Building id or unit id. */
+  id: string;
+  /** Production points invested so far. */
+  progress: number;
+}
+
+export interface CityState {
+  id: string;
+  owner: string;
+  name: string;
+  raceId: string;
+  plane: PlaneId;
+  x: number;
+  y: number;
+  /** Population in thousands (MoM-style 1..N points). */
+  population: number;
+  /** Food surplus accumulated toward the next population point. */
+  growthProgress: number;
+  buildings: string[];
+  /** Front of the queue is under construction. */
+  buildQueue: BuildOrder[];
+}
+
+export interface UnitState {
+  id: string;
+  owner: string;
+  defId: string;
+  plane: PlaneId;
+  x: number;
+  y: number;
+  /** Movement points remaining this turn. */
+  moves: number;
+  hp: number;
 }
 
 // ---------------------------------------------------------------------------
