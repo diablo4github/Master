@@ -17,6 +17,12 @@
  * chain, where `humans-covenant-rites-1` unlocks 'gilded-temple-spire' and
  * the final study `humans-pilgrimage-1` unlocks 'celestial-temple' (see
  * docs/DESIGN.md, the temple chain is humans' signature playstyle).
+ *
+ * Below the race studies is the **magic shelf**: a second, race-independent
+ * 6-study chain per school of magic (docs/DESIGN.md "Research has two
+ * shelves"), marked by `StudyDef.school` instead of being listed in any
+ * race's `studies` array. Any wizard who knows a school may research that
+ * school's tree. See the "Magic shelf" section below for its own rules.
  */
 
 import type { StudyDef } from '@sim/types';
@@ -1295,5 +1301,451 @@ export const STUDIES: Record<string, StudyDef> = {
     description:
       'The rite that lets a haloborn\'s inner light spill outward into the world, ' +
       'raising a bastion of living light around them.',
+  },
+
+  // =========================================================================
+  // Magic shelf — one 6-study tree per school of magic (see docs/DESIGN.md
+  // "Research has two shelves"). Any wizard who knows a school may research
+  // that school's tree alongside their race's studies; `school` marks these
+  // as school-wide rather than race-owned, so no race lists them in
+  // `RaceDef.studies`. Costs escalate 60 -> 150 -> 320 -> 600 -> 1000 -> 1500
+  // (+/-20%) per chain, steeper than any race chain — a pure mage's deepest
+  // study is meant to be a bragging-rights commitment. No unlocksBuildings /
+  // unlocksUnits here: shrine access is race-gated and summon unlocks arrive
+  // with the casting milestone, so the magic shelf is pure cityEffects.
+  // =========================================================================
+
+  // ---------------------------------------------------------------------
+  // Life — consecration and communion: blessing, protection, exaltation.
+  // Growth, unrest suppression, and research drawn from faith itself.
+  // ---------------------------------------------------------------------
+  'magic-life-1-consecration': {
+    id: 'magic-life-1-consecration',
+    name: 'Consecration',
+    school: 'life',
+    cost: 58,
+    effects: {
+      cityEffects: { yields: { mana: 1 }, unrestReduction: 1 },
+    },
+    description:
+      'Ground and water blessed until they carry a faint, unmistakable warmth — ' +
+      'the first mark of a wizard sworn to Life.',
+  },
+  'magic-life-2-benediction': {
+    id: 'magic-life-2-benediction',
+    name: 'Benediction',
+    school: 'life',
+    cost: 145,
+    requires: ['magic-life-1-consecration'],
+    effects: {
+      cityEffects: { growthBonus: 0.05, unrestReduction: 1 },
+    },
+    description:
+      'A standing blessing laid over field and cradle alike, easing both the ' +
+      'harvest and the newborn\'s first breath.',
+  },
+  'magic-life-3-sanctified-doctrine': {
+    id: 'magic-life-3-sanctified-doctrine',
+    name: 'Sanctified Doctrine',
+    school: 'life',
+    cost: 310,
+    requires: ['magic-life-2-benediction'],
+    effects: {
+      cityEffects: { yields: { research: 2, mana: 1 }, unrestReduction: 1 },
+    },
+    description:
+      'Scripture studied as seriously as any spellbook, turning devotion itself ' +
+      'into a source of insight.',
+  },
+  'magic-life-4-exalted-communion': {
+    id: 'magic-life-4-exalted-communion',
+    name: 'Exalted Communion',
+    school: 'life',
+    cost: 560,
+    requires: ['magic-life-3-sanctified-doctrine'],
+    effects: {
+      cityEffects: { growthBonus: 0.1, unrestReduction: 3, yields: { mana: 3 } },
+    },
+    description:
+      'Rites that let a wizard commune directly with Life\'s source, and channel ' +
+      'a measure of its abundance into every hearth in the realm.',
+  },
+  'magic-life-5-celestial-mandate': {
+    id: 'magic-life-5-celestial-mandate',
+    name: 'Celestial Mandate',
+    school: 'life',
+    cost: 980,
+    requires: ['magic-life-4-exalted-communion'],
+    effects: {
+      cityEffects: {
+        yields: { research: 6, mana: 4 },
+        growthBonus: 0.12,
+        unrestReduction: 3,
+      },
+    },
+    description:
+      'A formal charter, sworn before something that is not quite mortal, ' +
+      'naming the wizard\'s realm blessed and its people its stewards.',
+  },
+  'magic-life-6-apotheosis-of-the-white-flame': {
+    id: 'magic-life-6-apotheosis-of-the-white-flame',
+    name: 'Apotheosis of the White Flame',
+    school: 'life',
+    cost: 1480,
+    requires: ['magic-life-5-celestial-mandate'],
+    effects: {
+      cityEffects: {
+        growthBonus: 0.2,
+        unrestReduction: 6,
+        yields: { research: 9, mana: 6 },
+        yieldMultipliers: { research: 1.2 },
+      },
+    },
+    description:
+      'The wizard\'s own body becomes a lesser conduit for Life\'s light — a ' +
+      'mantle every pure Life mage wears, and every rival fears.',
+  },
+
+  // ---------------------------------------------------------------------
+  // Death — tithes of the dead: corruption, conversion, attrition. Mana and
+  // gold drawn from a realm's graves, crypts, and battlefields.
+  // ---------------------------------------------------------------------
+  'magic-death-1-grave-tithe': {
+    id: 'magic-death-1-grave-tithe',
+    name: 'Grave Tithe',
+    school: 'death',
+    cost: 55,
+    effects: {
+      cityEffects: { yields: { mana: 2, gold: 1 } },
+    },
+    description:
+      'The dead are asked for a small toll before they are allowed to rest, ' +
+      'paid in mana and a handful of grave-goods.',
+  },
+  'magic-death-2-bone-toll': {
+    id: 'magic-death-2-bone-toll',
+    name: 'Bone Toll',
+    school: 'death',
+    cost: 140,
+    requires: ['magic-death-1-grave-tithe'],
+    effects: {
+      cityEffects: { yields: { mana: 3, gold: 2 } },
+    },
+    description:
+      'A wider levy on Umbra\'s bone-yards and battlefields, converting what ' +
+      'the living leave behind into coin and power.',
+  },
+  'magic-death-3-charnel-covenant': {
+    id: 'magic-death-3-charnel-covenant',
+    name: 'Charnel Covenant',
+    school: 'death',
+    cost: 300,
+    requires: ['magic-death-2-bone-toll'],
+    effects: {
+      cityEffects: { yields: { mana: 5, gold: 3 } },
+    },
+    description:
+      'A binding pact with the restless dead of the realm, who give up their ' +
+      'lingering essence in exchange for a wizard\'s patronage.',
+  },
+  'magic-death-4-black-tithing': {
+    id: 'magic-death-4-black-tithing',
+    name: 'Black Tithing',
+    school: 'death',
+    cost: 570,
+    requires: ['magic-death-3-charnel-covenant'],
+    effects: {
+      cityEffects: { yields: { mana: 8, gold: 5 }, unrestReduction: 2 },
+    },
+    description:
+      'Death\'s tax made formal and empire-wide: every grave, crypt, and ' +
+      'battlefield now pays its due on schedule.',
+  },
+  'magic-death-5-reapers-accord': {
+    id: 'magic-death-5-reapers-accord',
+    name: "Reaper's Accord",
+    school: 'death',
+    cost: 1020,
+    requires: ['magic-death-4-black-tithing'],
+    effects: {
+      cityEffects: { yields: { mana: 12, gold: 8 }, yieldMultipliers: { mana: 1.2 } },
+    },
+    description:
+      'An accord struck with something that collects on every death in the ' +
+      'realm, and is willing to share a cut.',
+  },
+  'magic-death-6-dominion-of-the-grave': {
+    id: 'magic-death-6-dominion-of-the-grave',
+    name: 'Dominion of the Grave',
+    school: 'death',
+    cost: 1490,
+    requires: ['magic-death-5-reapers-accord'],
+    effects: {
+      cityEffects: {
+        yields: { mana: 18, gold: 12 },
+        yieldMultipliers: { mana: 1.35, gold: 1.2 },
+      },
+    },
+    description:
+      'The wizard\'s claim over death itself made absolute — nothing dies in ' +
+      'the realm without enriching them a little more.',
+  },
+
+  // ---------------------------------------------------------------------
+  // Chaos — forge-fires: destruction, fire, raw force bent toward
+  // production. Escalating output, never at the cost of stability.
+  // ---------------------------------------------------------------------
+  'magic-chaos-1-forge-fire': {
+    id: 'magic-chaos-1-forge-fire',
+    name: 'Forge-Fire Rite',
+    school: 'chaos',
+    cost: 60,
+    effects: {
+      cityEffects: { yieldMultipliers: { production: 1.06 } },
+    },
+    description:
+      'A rite that keeps every forge and furnace in the realm burning a shade ' +
+      'hotter than it has any right to.',
+  },
+  'magic-chaos-2-cinder-doctrine': {
+    id: 'magic-chaos-2-cinder-doctrine',
+    name: 'Cinder Doctrine',
+    school: 'chaos',
+    cost: 155,
+    requires: ['magic-chaos-1-forge-fire'],
+    effects: {
+      cityEffects: { yields: { production: 3 }, yieldMultipliers: { production: 1.08 } },
+    },
+    description:
+      'Controlled destruction turned into method: rubble and ash, properly ' +
+      'directed, feed the next thing built.',
+  },
+  'magic-chaos-3-wildfire-rites': {
+    id: 'magic-chaos-3-wildfire-rites',
+    name: 'Wildfire Rites',
+    school: 'chaos',
+    cost: 330,
+    requires: ['magic-chaos-2-cinder-doctrine'],
+    effects: {
+      cityEffects: { yields: { production: 5 }, yieldMultipliers: { production: 1.12 } },
+    },
+    description:
+      'Chaos let loose just enough to scour and clear, leaving forges and ' +
+      'workshops running hotter for it.',
+  },
+  'magic-chaos-4-molten-covenant': {
+    id: 'magic-chaos-4-molten-covenant',
+    name: 'Molten Covenant',
+    school: 'chaos',
+    cost: 600,
+    requires: ['magic-chaos-3-wildfire-rites'],
+    effects: {
+      cityEffects: { yields: { production: 7 }, yieldMultipliers: { production: 1.18 } },
+    },
+    description:
+      'A standing bargain with raw elemental force, its fury bent toward the ' +
+      'bellows and anvils of the realm.',
+  },
+  'magic-chaos-5-inferno-mastery': {
+    id: 'magic-chaos-5-inferno-mastery',
+    name: 'Inferno Mastery',
+    school: 'chaos',
+    cost: 1010,
+    requires: ['magic-chaos-4-molten-covenant'],
+    effects: {
+      cityEffects: { yields: { production: 10 }, yieldMultipliers: { production: 1.25 } },
+    },
+    description:
+      'The wizard learns to hold a firestorm in cupped hands and pour it, ' +
+      'precisely, into every foundry they own.',
+  },
+  'magic-chaos-6-maelstrom-forged': {
+    id: 'magic-chaos-6-maelstrom-forged',
+    name: 'Maelstrom-Forged',
+    school: 'chaos',
+    cost: 1500,
+    requires: ['magic-chaos-5-inferno-mastery'],
+    effects: {
+      cityEffects: { yields: { production: 15 }, yieldMultipliers: { production: 1.4 } },
+    },
+    description:
+      'A permanent tether to the Maelstrom itself, its raw destructive current ' +
+      'rerouted wholesale into production.',
+  },
+
+  // ---------------------------------------------------------------------
+  // Nature — the green chain: growth, beasts, terrain. Food and population
+  // growth, drawn from land that answers a wizard's attention.
+  // ---------------------------------------------------------------------
+  'magic-nature-1-first-growth': {
+    id: 'magic-nature-1-first-growth',
+    name: 'First Growth',
+    school: 'nature',
+    cost: 62,
+    effects: {
+      cityEffects: { yields: { food: 2 } },
+    },
+    description:
+      'A coaxing rite that convinces field and orchard to give a little more, ' +
+      'a little sooner.',
+  },
+  'magic-nature-2-verdant-rite': {
+    id: 'magic-nature-2-verdant-rite',
+    name: 'Verdant Rite',
+    school: 'nature',
+    cost: 148,
+    requires: ['magic-nature-1-first-growth'],
+    effects: {
+      cityEffects: { yields: { food: 3 }, growthBonus: 0.04 },
+    },
+    description:
+      'Green magic poured into root and soil until a realm\'s farmland ' +
+      'outgrows its ordinary bounds.',
+  },
+  'magic-nature-3-wildroot-communion': {
+    id: 'magic-nature-3-wildroot-communion',
+    name: 'Wildroot Communion',
+    school: 'nature',
+    cost: 315,
+    requires: ['magic-nature-2-verdant-rite'],
+    effects: {
+      cityEffects: { yields: { food: 4 }, growthBonus: 0.07 },
+    },
+    description:
+      'Communion with the deep roots beneath every field, which remember how ' +
+      'to grow better than any farmer taught them.',
+  },
+  'magic-nature-4-bountiful-harvest': {
+    id: 'magic-nature-4-bountiful-harvest',
+    name: 'Bountiful Harvest',
+    school: 'nature',
+    cost: 590,
+    requires: ['magic-nature-3-wildroot-communion'],
+    effects: {
+      cityEffects: { yields: { food: 6 }, growthBonus: 0.1 },
+    },
+    description:
+      'A season-spanning working that turns every harvest into the best one ' +
+      'anyone can remember.',
+  },
+  'magic-nature-5-primal-blossoming': {
+    id: 'magic-nature-5-primal-blossoming',
+    name: 'Primal Blossoming',
+    school: 'nature',
+    cost: 1000,
+    requires: ['magic-nature-4-bountiful-harvest'],
+    effects: {
+      cityEffects: { yields: { food: 9 }, growthBonus: 0.15 },
+    },
+    description:
+      'The land itself quickens under the wizard\'s attention, orchards and ' +
+      'pastures growing as if touched by an early, endless spring.',
+  },
+  'magic-nature-6-worldroot-awakening': {
+    id: 'magic-nature-6-worldroot-awakening',
+    name: 'Worldroot Awakening',
+    school: 'nature',
+    cost: 1470,
+    requires: ['magic-nature-5-primal-blossoming'],
+    effects: {
+      cityEffects: { yields: { food: 14 }, growthBonus: 0.22, housing: 3 },
+    },
+    description:
+      'The wizard wakes something ancient and green beneath the whole realm, ' +
+      'and it answers by making the land generous beyond reason.',
+  },
+
+  // ---------------------------------------------------------------------
+  // Sorcery — illusion and counter-magic bent toward scholarship. Research
+  // multipliers and the mana to sustain them.
+  // ---------------------------------------------------------------------
+  'magic-sorcery-1-arcane-current': {
+    id: 'magic-sorcery-1-arcane-current',
+    name: 'Arcane Current',
+    school: 'sorcery',
+    cost: 65,
+    effects: {
+      cityEffects: { yields: { mana: 2 }, yieldMultipliers: { research: 1.05 } },
+    },
+    description:
+      'A subtle current of Sorcery drawn into the realm\'s libraries and ' +
+      'towers, sharpening thought as much as spellcraft.',
+  },
+  'magic-sorcery-2-mirrorweave': {
+    id: 'magic-sorcery-2-mirrorweave',
+    name: 'Mirrorweave',
+    school: 'sorcery',
+    cost: 150,
+    requires: ['magic-sorcery-1-arcane-current'],
+    effects: {
+      cityEffects: { yields: { mana: 3 }, yieldMultipliers: { research: 1.08 } },
+    },
+    description:
+      'Illusion-craft turned inward, reflecting a scholar\'s own insight back ' +
+      'at them clarified and doubled.',
+  },
+  'magic-sorcery-3-veiled-doctrine': {
+    id: 'magic-sorcery-3-veiled-doctrine',
+    name: 'Veiled Doctrine',
+    school: 'sorcery',
+    cost: 325,
+    requires: ['magic-sorcery-2-mirrorweave'],
+    effects: {
+      cityEffects: {
+        yields: { mana: 4, research: 2 },
+        yieldMultipliers: { research: 1.1 },
+      },
+    },
+    description:
+      'A body of counter-magic theory taught only in whispers, useful for ' +
+      'unmaking a rival\'s work as much as advancing one\'s own.',
+  },
+  'magic-sorcery-4-counterspell-canon': {
+    id: 'magic-sorcery-4-counterspell-canon',
+    name: 'Counterspell Canon',
+    school: 'sorcery',
+    cost: 605,
+    requires: ['magic-sorcery-3-veiled-doctrine'],
+    effects: {
+      cityEffects: {
+        yields: { mana: 6 },
+        yieldMultipliers: { research: 1.15, mana: 1.1 },
+      },
+    },
+    description:
+      'The formal canon of unmaking, which turns out to teach as much about ' +
+      'how magic works as any spellbook does.',
+  },
+  'magic-sorcery-5-labyrinthine-mastery': {
+    id: 'magic-sorcery-5-labyrinthine-mastery',
+    name: 'Labyrinthine Mastery',
+    school: 'sorcery',
+    cost: 1015,
+    requires: ['magic-sorcery-4-counterspell-canon'],
+    effects: {
+      cityEffects: {
+        yields: { mana: 9, research: 4 },
+        yieldMultipliers: { research: 1.2 },
+      },
+    },
+    description:
+      'Thought bent into recursive mazes that trap error and let a wizard\'s ' +
+      'true insights escape faster than ever.',
+  },
+  'magic-sorcery-6-grand-illusion': {
+    id: 'magic-sorcery-6-grand-illusion',
+    name: 'Grand Illusion',
+    school: 'sorcery',
+    cost: 1490,
+    requires: ['magic-sorcery-5-labyrinthine-mastery'],
+    effects: {
+      cityEffects: {
+        yields: { mana: 14, research: 6 },
+        yieldMultipliers: { research: 1.3, mana: 1.2 },
+      },
+    },
+    description:
+      'The wizard\'s masterwork: an illusion so vast and so perfect it ' +
+      'reshapes how an entire realm perceives — and produces — knowledge.',
   },
 };

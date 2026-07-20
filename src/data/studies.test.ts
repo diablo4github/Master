@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { STUDIES } from './studies';
 import { RACES } from './races';
 import { BUILDINGS } from './buildings';
+import { SCHOOL_IDS } from '@sim/types';
 
 const races = Object.values(RACES);
 const studyIds = new Set(Object.keys(STUDIES));
@@ -17,6 +18,9 @@ for (const race of races) {
   }
 }
 
+/** The magic shelf: studies carrying a `school`, independent of any race. */
+const magicStudies = Object.values(STUDIES).filter((s) => s.school !== undefined);
+
 describe('studies', () => {
   it('every study id referenced by every race exists in STUDIES', () => {
     for (const race of races) {
@@ -26,9 +30,15 @@ describe('studies', () => {
     }
   });
 
-  it('has no orphan studies: every STUDIES key is referenced by some race', () => {
+  it('has no orphan studies: every STUDIES key is referenced by a race or carries a school', () => {
     for (const id of studyIds) {
-      expect(raceOfStudy.has(id), `${id} is not referenced by any race`).toBe(true);
+      const study = STUDIES[id];
+      const ownedByRace = raceOfStudy.has(id);
+      const ownedByMagicShelf = !!study?.school;
+      expect(
+        ownedByRace || ownedByMagicShelf,
+        `${id} is not referenced by any race and carries no school`
+      ).toBe(true);
     }
   });
 
@@ -170,6 +180,96 @@ describe('studies', () => {
     }
     for (const [id, count] of counts) {
       expect(count, `${id} referenced by ${count} races`).toBe(1);
+    }
+  });
+
+  it('race studies are unchanged: no race-owned study carries a school', () => {
+    for (const id of raceOfStudy.keys()) {
+      expect(STUDIES[id]?.school, `${id} is race-owned but has a school set`).toBeUndefined();
+    }
+  });
+});
+
+describe('magic shelf (school studies)', () => {
+  it('has 127 total studies: 97 race studies + 30 magic studies', () => {
+    expect(studyIds.size).toBe(127);
+    expect(magicStudies.length).toBe(30);
+  });
+
+  it('has exactly 6 studies per school, each with a valid school id', () => {
+    const bySchool = new Map<string, number>();
+    for (const study of magicStudies) {
+      expect(SCHOOL_IDS as readonly string[], `${study.id} has invalid school ${study.school}`).toContain(
+        study.school
+      );
+      bySchool.set(study.school as string, (bySchool.get(study.school as string) ?? 0) + 1);
+    }
+    expect(bySchool.size).toBe(SCHOOL_IDS.length);
+    for (const school of SCHOOL_IDS) {
+      expect(bySchool.get(school), `school ${school} does not have exactly 6 studies`).toBe(6);
+    }
+  });
+
+  it('magic study ids are kebab-case and prefixed magic-<school>-', () => {
+    for (const study of magicStudies) {
+      expect(study.id).toMatch(KEBAB_CASE);
+      expect(study.id.startsWith(`magic-${study.school}-`), study.id).toBe(true);
+    }
+  });
+
+  it('magic chains stay within their school: requires only reference same-school ids', () => {
+    for (const study of magicStudies) {
+      for (const reqId of study.requires ?? []) {
+        const req = STUDIES[reqId];
+        expect(req, `${study.id} requires ${reqId}`).toBeDefined();
+        expect(
+          req?.school,
+          `${study.id} (school ${study.school}) requires ${reqId} (school ${req?.school})`
+        ).toBe(study.school);
+      }
+    }
+  });
+
+  it('each school has exactly one root study (no requires) anchoring its chain', () => {
+    for (const school of SCHOOL_IDS) {
+      const roots = magicStudies.filter((s) => s.school === school && (!s.requires || s.requires.length === 0));
+      expect(roots.length, `school ${school} does not have exactly one root study`).toBe(1);
+    }
+  });
+
+  it('each school forms a single linear chain of 6 studies with no cycles', () => {
+    for (const school of SCHOOL_IDS) {
+      const schoolStudies = magicStudies.filter((s) => s.school === school);
+      for (const start of schoolStudies) {
+        const visited = new Set<string>();
+        let current: string | undefined = start.id;
+        while (current) {
+          expect(visited.has(current), `cycle detected involving ${current} (from ${start.id})`).toBe(
+            false
+          );
+          visited.add(current);
+          const reqs: readonly string[] = STUDIES[current]?.requires ?? [];
+          current = reqs[0];
+        }
+      }
+    }
+  });
+
+  it('every magic study has non-empty cityEffects', () => {
+    for (const study of magicStudies) {
+      const cityEffects = study.effects.cityEffects;
+      expect(cityEffects, `${study.id} has no cityEffects`).toBeDefined();
+      expect(
+        cityEffects && Object.keys(cityEffects).length > 0,
+        `${study.id} has empty cityEffects`
+      ).toBe(true);
+    }
+  });
+
+  it('the magic shelf has no unlocksBuildings or unlocksUnits', () => {
+    for (const study of magicStudies) {
+      expect(study.effects.unlocksBuildings ?? [], study.id).toEqual([]);
+      expect(study.effects.unlocksUnits ?? [], study.id).toEqual([]);
     }
   });
 });
