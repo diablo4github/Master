@@ -325,7 +325,10 @@ export function makeState(opts: {
   players: PlayerState[];
   cities?: CityState[];
   units?: UnitState[];
+  lairs?: GameState['lairs'];
+  battles?: GameState['battles'];
   nextEntityId?: number;
+  nextBattleId?: number;
 }): GameState {
   const maps: GameState['maps'] = {} as GameState['maps'];
   for (const m of opts.maps) maps[m.plane] = m;
@@ -341,7 +344,10 @@ export function makeState(opts: {
     players: opts.players,
     cities: opts.cities ?? [],
     units: opts.units ?? [],
+    lairs: opts.lairs ?? [],
+    battles: opts.battles ?? [],
     nextEntityId: opts.nextEntityId ?? 1,
+    nextBattleId: opts.nextBattleId ?? 1,
   };
 }
 

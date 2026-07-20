@@ -21,8 +21,9 @@ import { createRng, type Rng, type RngState } from './rng';
 import { generateAllPlanes } from '../map/mapgen';
 import type { PlaneMap } from '../map/tiles';
 import { getTile, neighbors } from '../map/tiles';
-import { isPassable } from '../units/units';
+import { isPassable, chebyshev } from '../units/units';
 import { foundCity, spawnUnit, CAPITAL_START_POP } from '../city/city';
+import type { BattleReport } from '../combat/events';
 
 /** Per-player research progress toward the active magical study. */
 export interface ResearchState {
@@ -46,6 +47,43 @@ export interface PlayerState {
   completedStudies: string[];
 }
 
+/**
+ * A neutral monster lair seeded at worldgen (a Master of Magic institution).
+ * `monsterIds` are unit-def ids from the injected content; `monsterHp` is a
+ * parallel array of remaining hit-point pools (index-aligned), kept as flat
+ * arrays so the whole state stays trivially JSON-serializable. A cleared lair
+ * never triggers a battle again and has credited its loot exactly once.
+ */
+export interface LairState {
+  id: string;
+  plane: PlaneId;
+  x: number;
+  y: number;
+  /** Def ids of the garrison monsters (origin generic, role 'monster'). */
+  monsterIds: string[];
+  /** Remaining hp pool per monster, parallel to monsterIds. */
+  monsterHp: number[];
+  loot: { gold: number; mana: number };
+  cleared: boolean;
+}
+
+/**
+ * A resolved battle, appended when a stack moves onto a hostile tile. Carries
+ * the full replayable BattleReport so the viewer can play it back without
+ * re-running the sim. `defenderPlayer` is 'neutral' for lair monsters.
+ */
+export interface BattleRecord {
+  id: string;
+  turn: number;
+  plane: PlaneId;
+  x: number;
+  y: number;
+  attackerPlayer: string | 'neutral';
+  defenderPlayer: string | 'neutral';
+  report: BattleReport;
+  lairId?: string;
+}
+
 export interface GameState {
   settings: GameSettings;
   turn: number;
@@ -55,11 +93,17 @@ export interface GameState {
   players: PlayerState[];
   cities: CityState[];
   units: UnitState[];
+  /** Neutral monster lairs seeded at worldgen. */
+  lairs: LairState[];
+  /** Append-only log of resolved battles (replayable reports). */
+  battles: BattleRecord[];
   /**
    * Monotonic counter for minting entity ids ('city-N' / 'unit-N'). Never
    * reused, so ids are stable and deterministic across a game's lifetime.
    */
   nextEntityId: number;
+  /** Monotonic counter for minting battle ids ('battle-N'). */
+  nextBattleId: number;
 }
 
 /**
@@ -185,7 +229,10 @@ export function createGame(settings: GameSettings, content: GameContent): GameSt
     players,
     cities: [],
     units: [],
+    lairs: [],
+    battles: [],
     nextEntityId: 1,
+    nextBattleId: 1,
   };
 
   const starts = chooseStartLocations(rng, maps, settings.players);
@@ -224,5 +271,196 @@ export function createGame(settings: GameSettings, content: GameContent): GameSt
     }
   });
 
+  seedLairs(state, content, rng, starts);
+
   return state;
+}
+
+// ---------------------------------------------------------------------------
+// Lair seeding
+// ---------------------------------------------------------------------------
+
+/** Land tiles per lair on a full world — sparse wilderness. */
+const LAIR_TILES_PER_WORLD = 180;
+/** Land tiles per lair in a school dimension — denser challenge space. */
+const LAIR_TILES_PER_DIMENSION = 60;
+/** A lair must sit at least this far (Chebyshev) from any player start. */
+const LAIR_MIN_FROM_START = 5;
+/** Lairs must sit at least this far (Chebyshev) from each other. */
+const LAIR_MIN_SPACING = 4;
+/**
+ * Garrison-tier target below which "strong" monsters (breath-weapon / fear
+ * carriers) are barred from a world lair. The nearest lairs to a start have
+ * tier 0, so they can never hold a dragon; dimensions ignore this (tier 1).
+ */
+const STRONG_TIER_FLOOR = 0.5;
+/** Gaussian spread when matching a monster's power-rank to a lair's target tier. */
+const TIER_SIGMA = 0.35;
+
+/** Monster-role, generic-origin unit defs — the lair garrison pool. */
+function monsterDefs(content: GameContent): UnitDef[] {
+  const out: UnitDef[] = [];
+  for (const id of Object.keys(content.units)) {
+    const def = content.units[id];
+    if (def && def.role === 'monster' && 'generic' in def.origin) out.push(def);
+  }
+  return out;
+}
+
+/** Rough combat strength of one monster: figures × hits × melee damage. */
+function monsterPower(def: UnitDef): number {
+  const c = def.combat;
+  return c.figures * c.hits * c.melee.damage;
+}
+
+/** Carriers of the battle-warping abilities gate the strong tiers. */
+function isStrongMonster(def: UnitDef): boolean {
+  return def.abilities.some((a) => a.type === 'breath-weapon' || a.type === 'fear');
+}
+
+/**
+ * Weighted monster pick: favours defs whose normalized power-rank sits near the
+ * lair's target tier `t` (a Gaussian on the rank difference). Deterministic in
+ * the supplied rng.
+ */
+function pickMonster(
+  rng: Rng,
+  pool: readonly UnitDef[],
+  tierNorm: Map<string, number>,
+  t: number,
+): UnitDef {
+  const weights = pool.map((d) => {
+    const diff = (tierNorm.get(d.id) ?? 0) - t;
+    return Math.exp(-(diff * diff) / (2 * TIER_SIGMA * TIER_SIGMA));
+  });
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = rng.next() * total;
+  for (let i = 0; i < pool.length; i++) {
+    if (r < (weights[i] as number)) return pool[i] as UnitDef;
+    r -= weights[i] as number;
+  }
+  return pool[pool.length - 1] as UnitDef;
+}
+
+/**
+ * Scatters monster lairs across every plane. Worlds get ~1 lair per 180 land
+ * tiles; school dimensions ~1 per 60 (denser challenge spaces). Each lair sits
+ * on passable, non-peak land, ≥5 Chebyshev from any player start and ≥4 from
+ * any other lair. Garrisons are drawn by tier: lairs nearest a start pull from
+ * the weak end of the roster and can never hold a "strong" (breath/fear)
+ * monster; distant lairs and every dimension lair may. Loot scales with the
+ * garrison's summed strength (gold ≈ 3–8×, mana ≈ half the gold).
+ *
+ * Uses the forked 'lairs' rng stream, so it never perturbs map generation or
+ * start placement. No-op when the content ships no monster-role units.
+ */
+function seedLairs(
+  state: GameState,
+  content: GameContent,
+  rng: Rng,
+  starts: readonly { plane: PlaneId; x: number; y: number }[],
+): void {
+  const monsters = monsterDefs(content);
+  if (monsters.length === 0) return;
+
+  // Rank monsters weakest→strongest; ties broken by id for determinism.
+  const ranked = monsters
+    .slice()
+    .sort((a, b) => monsterPower(a) - monsterPower(b) || (a.id < b.id ? -1 : 1));
+  const tierNorm = new Map<string, number>();
+  ranked.forEach((d, i) => tierNorm.set(d.id, ranked.length > 1 ? i / (ranked.length - 1) : 0));
+
+  const lairRng = rng.fork('lairs');
+  let lairCounter = 0;
+
+  for (const planeDef of content.planes) {
+    const map = state.maps[planeDef.id];
+    if (!map) continue;
+
+    const perTiles = planeDef.kind === 'dimension' ? LAIR_TILES_PER_DIMENSION : LAIR_TILES_PER_WORLD;
+    const target = Math.round((map.width * map.height) / perTiles);
+    if (target <= 0) continue;
+
+    const planeStarts = starts.filter((s) => s.plane === planeDef.id);
+
+    // Candidate tiles: passable, non-peak land far enough from every start.
+    const candidates: { x: number; y: number }[] = [];
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        const tile = getTile(map, x, y);
+        if (!tile || tile.elevation === 3) continue;
+        if (!isPassable(map, x, y)) continue;
+        let farEnough = true;
+        for (const s of planeStarts) {
+          if (chebyshev(x, y, s.x, s.y) < LAIR_MIN_FROM_START) {
+            farEnough = false;
+            break;
+          }
+        }
+        if (farEnough) candidates.push({ x, y });
+      }
+    }
+
+    // Greedily place, honouring lair-to-lair spacing.
+    const placed: { x: number; y: number }[] = [];
+    for (const c of lairRng.shuffle(candidates)) {
+      if (placed.length >= target) break;
+      let ok = true;
+      for (const p of placed) {
+        if (chebyshev(c.x, c.y, p.x, p.y) < LAIR_MIN_SPACING) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) placed.push(c);
+    }
+
+    // Rank placed lairs by distance to the nearest start; the closest gets
+    // tier 0 (weakest), the farthest tier 1. Dimensions (no starts) are all
+    // treated as the far end.
+    const withDist = placed.map((p) => {
+      let best = Infinity;
+      for (const s of planeStarts) best = Math.min(best, chebyshev(p.x, p.y, s.x, s.y));
+      return { p, dist: best };
+    });
+    const byDist = withDist.slice().sort((a, b) => a.dist - b.dist);
+    const tierFrac = new Map<{ x: number; y: number }, number>();
+    byDist.forEach((e, i) =>
+      tierFrac.set(e.p, byDist.length > 1 ? i / (byDist.length - 1) : 0),
+    );
+
+    for (const { p } of withDist) {
+      const t = planeDef.kind === 'dimension' ? 1 : tierFrac.get(p) ?? 0;
+      const eligible =
+        planeDef.kind === 'dimension'
+          ? ranked
+          : ranked.filter((d) => !(isStrongMonster(d) && t < STRONG_TIER_FLOOR));
+      const pool = eligible.length > 0 ? eligible : ranked;
+
+      const size = lairRng.int(1, 5); // 1..4 units
+      const monsterIds: string[] = [];
+      const monsterHp: number[] = [];
+      let strength = 0;
+      for (let k = 0; k < size; k++) {
+        const def = pickMonster(lairRng, pool, tierNorm, t);
+        monsterIds.push(def.id);
+        monsterHp.push(def.combat.figures * def.combat.hits);
+        strength += monsterPower(def);
+      }
+
+      const gold = Math.round(strength * (3 + lairRng.next() * 5)); // 3–8× strength
+      const mana = Math.round(gold / 2);
+
+      state.lairs.push({
+        id: `lair-${lairCounter++}`,
+        plane: planeDef.id,
+        x: p.x,
+        y: p.y,
+        monsterIds,
+        monsterHp,
+        loot: { gold, mana },
+        cleared: false,
+      });
+    }
+  }
 }

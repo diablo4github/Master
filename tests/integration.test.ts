@@ -11,10 +11,10 @@ import { BUILDINGS } from '../src/data/buildings';
 import { UNITS } from '../src/data/units';
 import { STUDIES } from '../src/data/studies';
 import { WIZARDS } from '../src/data/wizards';
-import { createGame, type GameContent, type GameState } from '../src/sim/core/state';
+import { createGame, type GameContent, type GameState, type LairState } from '../src/sim/core/state';
 import { advanceTurn, applyCommand } from '../src/sim/core/turn';
-import { findPath } from '../src/sim/units/units';
-import { getTile, type TerrainId } from '../src/sim/map/tiles';
+import { findPath, isPassable, chebyshev } from '../src/sim/units/units';
+import { getTile, neighbors, type TerrainId } from '../src/sim/map/tiles';
 import type { GameSettings } from '../src/sim/types';
 
 const content: GameContent = {
@@ -42,7 +42,15 @@ const settings: GameSettings = {
 /** Terrain that is definitely settleable and walkable on Meridia. */
 const SAFE_SITE_TERRAIN: readonly TerrainId[] = ['grassland', 'forest', 'hills', 'desert'];
 
-/** First safe city site 3–6 tiles from the capital that the settler can reach. */
+function isLairTile(state: GameState, x: number, y: number): boolean {
+  const plane = state.cities[0]!.plane;
+  return state.lairs.some((l) => l.plane === plane && l.x === x && l.y === y);
+}
+
+/**
+ * First safe city site 3–6 tiles from the capital that the settler can reach
+ * WITHOUT its path crossing a lair (which would start a battle mid-march).
+ */
 function pickCitySite(state: GameState) {
   const capital = state.cities[0]!;
   const map = state.maps[capital.plane];
@@ -52,57 +60,114 @@ function pickCitySite(state: GameState) {
       if (d < 3 || d > 6) continue;
       const terrain = getTile(map, x, y)!.terrain;
       if (!SAFE_SITE_TERRAIN.includes(terrain)) continue;
-      if (findPath(map, capital.x, capital.y, x, y)) return { x, y };
+      if (isLairTile(state, x, y)) continue;
+      const path = findPath(map, capital.x, capital.y, x, y);
+      if (path && !path.some((p) => isLairTile(state, p.x, p.y))) return { x, y };
     }
   }
   throw new Error('no reachable city site near the capital for this seed');
 }
 
-/** Plays a fixed 80-turn session and returns the final state. */
+/** Nearest lair (by Chebyshev) on the capital's plane the capital can path to. */
+function nearestReachableLair(state: GameState): LairState {
+  const capital = state.cities[0]!;
+  const map = state.maps[capital.plane];
+  const reachable = state.lairs
+    .filter((l) => l.plane === capital.plane && findPath(map, capital.x, capital.y, l.x, l.y))
+    .sort((a, b) => chebyshev(a.x, a.y, capital.x, capital.y) - chebyshev(b.x, b.y, capital.x, capital.y));
+  const lair = reachable[0];
+  if (!lair) throw new Error('no reachable meridia lair for this seed');
+  return lair;
+}
+
+/** A passable, reachable tile adjacent to the lair, closest to the capital. */
+function stagingTileFor(state: GameState, lair: LairState) {
+  const capital = state.cities[0]!;
+  const map = state.maps[capital.plane];
+  const options = neighbors(lair.x, lair.y, map.width, map.height)
+    .filter((n) => {
+      const t = getTile(map, n.x, n.y);
+      return !!t && t.elevation !== 3 && isPassable(map, n.x, n.y) && !isLairTile(state, n.x, n.y);
+    })
+    .filter((n) => findPath(map, capital.x, capital.y, n.x, n.y))
+    .sort((a, b) => chebyshev(a.x, a.y, capital.x, capital.y) - chebyshev(b.x, b.y, capital.x, capital.y));
+  const staging = options[0];
+  if (!staging) throw new Error('no reachable staging tile beside the lair for this seed');
+  return staging;
+}
+
+/**
+ * Plays a fixed 80-turn session and returns the final state. Beyond the
+ * economy/settler arc it raises a two-militia strike stack, marches it to a
+ * staging tile beside the nearest reachable lair, and attacks it once — so a
+ * real strategic battle is folded into the deterministic session.
+ */
 function playSession(): GameState {
   let state = createGame(settings, content);
   const me = state.players[0]!.id;
   const site = pickCitySite(state);
+  const targetLair = nearestReachableLair(state);
+  const staging = stagingTileFor(state, targetLair);
 
   state = applyCommand(state, content, me, { type: 'set-research', studyId: 'humans-faith-1' });
-  state = applyCommand(state, content, me, {
-    type: 'set-build',
-    cityId: state.cities[0]!.id,
-    order: { kind: 'building', id: 'granary' },
-  });
+
+  let militiaOrders = 0;
+  let attacked = false;
 
   for (let turn = 0; turn < 80; turn++) {
-    const settler = state.units.find(
-      (u) => u.owner === me && u.defId === 'settler',
-    );
+    // Settle the second city.
+    const settler = state.units.find((u) => u.owner === me && u.defId === 'settler');
     if (settler) {
       if (settler.x === site.x && settler.y === site.y) {
-        state = applyCommand(state, content, me, {
-          type: 'found-city',
-          unitId: settler.id,
-          name: 'New Hope',
-        });
+        state = applyCommand(state, content, me, { type: 'found-city', unitId: settler.id, name: 'New Hope' });
       } else if (settler.moves > 0) {
-        state = applyCommand(state, content, me, {
-          type: 'move-unit',
-          unitId: settler.id,
-          to: site,
-        });
+        state = applyCommand(state, content, me, { type: 'move-unit', unitId: settler.id, to: site });
       }
     }
-    // Keep the capital busy: queue a marketplace once the granary is done.
+
+    // Capital build order: two militia (the strike stack), then granary, then
+    // marketplace. Re-queued whenever the queue empties.
     const capital = state.cities[0]!;
-    if (
-      capital.buildings.includes('granary') &&
-      !capital.buildings.includes('marketplace') &&
-      capital.buildQueue.length === 0
-    ) {
-      state = applyCommand(state, content, me, {
-        type: 'set-build',
-        cityId: capital.id,
-        order: { kind: 'building', id: 'marketplace' },
-      });
+    if (capital.buildQueue.length === 0) {
+      let order: { kind: 'building' | 'unit'; id: string } | null = null;
+      if (militiaOrders < 2) {
+        order = { kind: 'unit', id: 'militia' };
+        militiaOrders += 1;
+      } else if (!capital.buildings.includes('granary')) {
+        order = { kind: 'building', id: 'granary' };
+      } else if (!capital.buildings.includes('marketplace')) {
+        order = { kind: 'building', id: 'marketplace' };
+      }
+      if (order) state = applyCommand(state, content, me, { type: 'set-build', cityId: capital.id, order });
     }
+
+    // March the militia stack to staging, then attack the lair exactly once.
+    if (!attacked && state.cities.length >= 2) {
+      const strike = state.units.filter((u) => u.owner === me && u.defId === 'militia').slice(0, 2);
+      if (strike.length >= 2) {
+        const staged = (id: string) => {
+          const u = state.units.find((x) => x.id === id);
+          return !!u && u.x === staging.x && u.y === staging.y;
+        };
+        const ids = strike.map((u) => u.id);
+        if (ids.every(staged)) {
+          state = applyCommand(state, content, me, {
+            type: 'move-unit',
+            unitId: ids[0]!,
+            to: { x: targetLair.x, y: targetLair.y },
+          });
+          attacked = true;
+        } else {
+          for (const id of ids) {
+            const u = state.units.find((x) => x.id === id);
+            if (u && u.moves > 0 && !(u.x === staging.x && u.y === staging.y)) {
+              state = applyCommand(state, content, me, { type: 'move-unit', unitId: id, to: staging });
+            }
+          }
+        }
+      }
+    }
+
     state = advanceTurn(state, content);
   }
   return state;
@@ -142,8 +207,45 @@ describe('an 80-turn human session on the real content', () => {
     expect(me.mana).toBeGreaterThan(20);
   });
 
+  it('fought a real strategic battle: the militia stack struck a lair', () => {
+    expect(final.battles.length).toBeGreaterThanOrEqual(1);
+    const rec = final.battles[0]!;
+    expect(rec.attackerPlayer).toBe(me.id);
+    expect(rec.defenderPlayer).toBe('neutral');
+    expect(rec.lairId).toBeDefined();
+    expect(rec.plane).toBe('meridia');
+    // Well-formed replay: starts with battle-start, ends with battle-end.
+    expect(rec.report.events[0]!.type).toBe('battle-start');
+    expect(rec.report.events[rec.report.events.length - 1]!.type).toBe('battle-end');
+    // It was a stack (both militia) versus the lair garrison.
+    const start = rec.report.events[0]!;
+    if (start.type === 'battle-start') {
+      const attackers = start.units.filter((u) => u.side === 'attacker');
+      const defenders = start.units.filter((u) => u.side === 'defender');
+      expect(attackers.length).toBe(2);
+      expect(defenders.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('battle outcome is consistent with lair state (cleared+loot iff attacker won)', () => {
+    const rec = final.battles[0]!;
+    const lair = final.lairs.find((l) => l.id === rec.lairId)!;
+    if (rec.report.outcome.winner === 'attacker') {
+      expect(lair.cleared).toBe(true);
+    } else {
+      expect(lair.cleared).toBe(false);
+      // A surviving garrison keeps at least one live monster.
+      expect(lair.monsterHp.some((hp) => hp > 0)).toBe(true);
+    }
+  });
+
   it('is fully deterministic: replaying the identical session matches deep-equal', () => {
     expect(playSession()).toEqual(final);
+  });
+
+  it('replays the battle log identically across sessions', () => {
+    const other = playSession();
+    expect(other.battles).toEqual(final.battles);
   });
 
   it('survives a JSON save/load round-trip', () => {
