@@ -120,6 +120,33 @@ export const ROUT_CONTAGION_RADIUS = 3;
 export const ROUT_CONTAGION_PENALTY = 16;
 
 // ---------------------------------------------------------------------------
+// AREA EFFECTS AT SCALE. A breath weapon or a trampling charge does not chip a
+// regiment — it carves a swath through massed ranks (line geometry × density).
+// Sustained heals (regeneration, holy-aura) mend a fraction of a pool, so they
+// scale with the size of the formation they tend. Poison grinds proportionally
+// to the number of figures actually envenomed.
+// ---------------------------------------------------------------------------
+
+/** Figures a full-density formation exposes to one breath sweep (before density). */
+export const BREATH_SWATH = 90;
+/** Figure count at which a formation counts as fully dense (density → 1). */
+export const BREATH_DENSITY_REF = 140;
+/** A near-empty formation is never denser than nothing; floor keeps a sweep real. */
+export const BREATH_MIN_DENSITY = 0.15;
+
+/** Heal scaling: a pool this many figures large heals at its authored rate; a
+ *  bigger formation mends proportionally more (percent-ish), capped so it can't
+ *  runaway. Small/singular units (few figures) keep their authored rate. */
+export const HEAL_REF_FIGURES = 40;
+export const HEAL_MAX_SCALE = 12;
+
+/** Poison queued per envenomed figure is a fraction of a full per-figure dose;
+ *  the DoT then bleeds a proportion of the standing pool each tick. */
+export const POISON_PER_FIGURE = 0.5;
+export const POISON_TICK_FRACTION = 0.12; // of the outstanding poison pool per tick
+export const POISON_TICK_MIN = 2; // but always at least this much
+
+// ---------------------------------------------------------------------------
 // Geometry — square grid, 8-neighbour, Chebyshev distance (matches the
 // strategic map's movement model in src/sim/units).
 // ---------------------------------------------------------------------------
@@ -213,6 +240,27 @@ export interface Combatant {
   engagedLast: string[];
   /** Whether the unit has ever routed (affects rally messaging only). */
   brokenOnce: boolean;
+  /** Figures alive at the START of the current tick (proportional-morale base). */
+  figuresAtTickStart: number;
+  /** Figures lost so far during the current tick (any damage source). */
+  lostThisTick: number;
+  /** The most severe positional trigger behind this tick's casualties. */
+  worstCasualtyTrigger: MoraleTrigger | null;
+  /** Tick on which this unit last broke (for one-pass rout contagion), or -1. */
+  routedTick: number;
+}
+
+/** Positional casualty triggers, worst-first, for morale attribution. */
+const TRIGGER_SEVERITY: Record<string, number> = { casualties: 0, flank: 1, rear: 2 };
+
+/** Records `lost` casualties this tick on `c`, keeping the worst trigger seen. */
+export function recordCasualties(c: Combatant, lost: number, trigger: MoraleTrigger): void {
+  if (lost <= 0) return;
+  c.lostThisTick += lost;
+  const cur = c.worstCasualtyTrigger;
+  if (cur === null || (TRIGGER_SEVERITY[trigger] ?? 0) > (TRIGGER_SEVERITY[cur] ?? 0)) {
+    c.worstCasualtyTrigger = trigger;
+  }
 }
 
 export function abilityOf<T extends AbilityDef['type']>(
@@ -243,6 +291,55 @@ export function reachPriority(def: UnitDef): number {
 /** Undead never test morale and never rout. */
 export function checksMorale(def: UnitDef): boolean {
   return !hasAbility(def, 'undead');
+}
+
+/**
+ * How many enemy figures can physically engage this unit at one tile-face.
+ * A formation (≥2 figures) fills the whole face; a SINGULAR great monster is a
+ * single body a mass-scaled crowd can hack at (a dragon presents ~16, not 50).
+ */
+export function presentedFront(target: Combatant): number {
+  if (target.figures >= 2) return BASE_FRONTAGE;
+  const crowd = Math.round(target.def.combat.mass * MONSTER_CROWD_PER_MASS);
+  return Math.max(MIN_CROWD, Math.min(BASE_FRONTAGE, crowd));
+}
+
+/**
+ * Figures of `attacker` that actually swing at `target` this exchange, given
+ * `faceWidth` (1 frontal, wider when flanking/packing). See the FRONTAGE block
+ * above: min of the attacker's own frontage and the target's exposed front,
+ * widened by contact faces, never more than the attacker has left.
+ */
+export function engagedFigures(attacker: Combatant, target: Combatant, faceWidth: number): number {
+  const cap = Math.min(BASE_FRONTAGE, presentedFront(target)) * faceWidth;
+  return Math.max(1, Math.min(attacker.figures, Math.round(cap)));
+}
+
+/**
+ * Deterministic batched binomial: how many of `n` figures each landing an
+ * independent p=`p` blow actually connect. Rather than loop `n` rng draws (a
+ * 400-figure regiment would burn hundreds of draws per exchange), small counts
+ * are rolled exactly and large counts use a Gaussian (normal) approximation of
+ * the binomial via ONE Box–Muller pair — two rng draws, fully deterministic.
+ * Mean = n·p, sd = √(n·p·(1−p)); the sample is rounded and clamped to [0, n].
+ */
+export function sampleBinomial(rng: Rng, n: number, p: number): number {
+  if (n <= 0 || p <= 0) return 0;
+  if (p >= 1) return n;
+  if (n <= BINOMIAL_EXACT_MAX) {
+    let k = 0;
+    for (let i = 0; i < n; i++) if (rng.next() < p) k += 1;
+    return k;
+  }
+  const mean = n * p;
+  const sd = Math.sqrt(n * p * (1 - p));
+  const u1 = Math.max(1e-12, rng.next());
+  const u2 = rng.next();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  let k = Math.round(mean + z * sd);
+  if (k < 0) k = 0;
+  if (k > n) k = n;
+  return k;
 }
 
 /**

@@ -45,6 +45,9 @@ import {
   isCover,
   inField,
   homeEdgeX,
+  engagedFigures,
+  sampleBinomial,
+  recordCasualties,
   HIT_BASE,
   HIT_K,
   HIT_FLOOR,
@@ -56,13 +59,16 @@ import {
   ATTACK_FLANK_BONUS,
   ATTACK_REAR_BONUS,
   PACK_HUNTER_BONUS,
+  FLANK_EXTRA_FACE,
+  REAR_EXTRA_FACE,
+  PACK_EXTRA_FACE,
   CHARGE_MORALE_PENALTY_K,
   CHARGE_MOMENTUM_K,
   IMPALE_K,
   MAX_TICKS,
 } from './internal';
 import type { MoveReason, DamageKind } from './events';
-import { moraleCheck, tryRally, applyFearAuras } from './morale';
+import { moraleCheck, tryRally, applyFearAuras, applyCasualtyMorale, applyRoutContagion } from './morale';
 import {
   canMeleeReach,
   applyLifeDrain,
@@ -266,10 +272,14 @@ export function meleeAttack(
     attacker.def.combat.melee.damage + chargeBonus + (opts.bonusDamage ?? 0) - target.def.combat.armor,
   );
 
-  let landed = 0;
-  for (let f = 0; f < attacker.figures; f++) {
-    if (ctx.rng.next() < pHit) landed += 1;
-  }
+  // FRONTAGE: only the fighting front swings. Flank/rear/pack widen it — the
+  // extra engaged figures are a second, physical reason flanking is lethal.
+  const faceWidth =
+    1 +
+    (fi.rear ? REAR_EXTRA_FACE : fi.flank ? FLANK_EXTRA_FACE : 0) +
+    (packPartner ? PACK_EXTRA_FACE : 0);
+  const engaged = engagedFigures(attacker, target, faceWidth);
+  const landed = sampleBinomial(ctx.rng, engaged, pHit);
   const total = landed * perHit;
 
   // Attacker orients toward its target.
@@ -293,7 +303,8 @@ export function meleeAttack(
     unitId: attacker.id,
     targetId: target.id,
     at: { x: target.x, y: target.y },
-    figuresAttacking: attacker.figures,
+    // figuresAttacking is now the ENGAGED front, not the whole formation.
+    figuresAttacking: engaged,
     hits: landed,
     charge: !!chargeBonus,
     flank: fi.flank,
@@ -317,15 +328,16 @@ export function meleeAttack(
 
   if (total > 0) {
     applyLifeDrain(ctx, attacker, total);
-    if (landed > 0) applyPoisonOnHit(attacker, target);
+    if (landed > 0) applyPoisonOnHit(attacker, target, landed);
   }
 
   if (res.destroyed) {
     ctx.events.push({ type: 'death', tick: ctx.tick, unitId: target.id, at: { x: target.x, y: target.y } });
     ctx.occ.delete(occKey(target.x, target.y));
   } else if (res.figuresLost > 0) {
-    const trigger = fi.rear ? 'rear' : fi.flank ? 'flank' : 'casualties';
-    moraleCheck(ctx, target, trigger, 6 + res.figuresLost * 5);
+    // Morale is tested once, proportionally, at end of tick (see morale.ts) —
+    // here we only accumulate this tick's toll and the harshest position.
+    recordCasualties(target, res.figuresLost, fi.rear ? 'rear' : fi.flank ? 'flank' : 'casualties');
   }
 }
 
@@ -381,10 +393,10 @@ export function rangedVolley(ctx: BattleContext, c: Combatant, target: Combatant
   if (isCover(ctx.field, target.x, target.y)) pHit = Math.max(HIT_FLOOR, pHit - COVER_HIT_PENALTY);
   const perHit = Math.max(1, r.damage - target.def.combat.armor);
 
-  let landed = 0;
-  for (let f = 0; f < c.figures; f++) {
-    if (ctx.rng.next() < pHit) landed += 1;
-  }
+  // Ranged fire is NOT frontage-limited: every bow in the formation may loose.
+  // Accuracy (pHit) already scales the volume of hits, so massed archery stays
+  // proportionate to the number firing. Batched to avoid a draw per arrow.
+  const landed = sampleBinomial(ctx.rng, c.figures, pHit);
   c.ammo -= 1;
   c.facing = dirIndexTo(c.x, c.y, target.x, target.y);
 
@@ -417,7 +429,7 @@ export function rangedVolley(ctx: BattleContext, c: Combatant, target: Combatant
     ctx.events.push({ type: 'death', tick: ctx.tick, unitId: target.id, at: { x: target.x, y: target.y } });
     ctx.occ.delete(occKey(target.x, target.y));
   } else if (res.figuresLost > 0) {
-    moraleCheck(ctx, target, 'casualties', 5 + res.figuresLost * 4);
+    recordCasualties(target, res.figuresLost, 'casualties');
   }
 }
 
@@ -452,6 +464,13 @@ export function runEngine(ctx: BattleContext): number {
     ctx.tick = tick + 1;
     if (decided(ctx)) break;
 
+    // Baseline each unit's strength for this tick's proportional morale check.
+    for (const c of ctx.combatants) {
+      c.figuresAtTickStart = c.figures;
+      c.lostThisTick = 0;
+      c.worstCasualtyTrigger = null;
+    }
+
     const order = initiativeOrder(ctx);
     for (const c of order) {
       if (c.figures <= 0 || c.status === 'fled') continue;
@@ -467,7 +486,11 @@ export function runEngine(ctx: BattleContext): number {
     }
 
     endOfTickEffects(ctx);
+    // Proportional casualty morale (this tick's toll), then fear auras, then
+    // rout contagion so a fresh break can ripple through the neighbouring line.
+    applyCasualtyMorale(ctx);
     applyFearAuras(ctx);
+    applyRoutContagion(ctx);
 
     // Record contact for next tick's fresh-contact detection.
     for (const c of ctx.combatants) {

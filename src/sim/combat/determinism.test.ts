@@ -38,14 +38,14 @@ describe('determinism & serialization', () => {
     expect(JSON.parse(json)).toEqual(a);
   });
 
-  it('a battle that cannot resolve hits the 200-tick cap and ends in a draw', () => {
+  it('a battle that cannot resolve hits the tick cap and ends in a draw', () => {
     const r = runBattle({
       seed: 12,
       attacker: sideOf(IMMORTAL, 1, 'a'),
       defender: sideOf(IMMORTAL, 1, 'd'),
       terrain: { plane: 'meridia', terrain: 'grassland' },
     });
-    expect(r.outcome.ticks).toBe(200);
+    expect(r.outcome.ticks).toBe(400);
     expect(r.outcome.winner).toBe('draw');
     const end = r.events[r.events.length - 1]!;
     expect(end.type).toBe('battle-end');

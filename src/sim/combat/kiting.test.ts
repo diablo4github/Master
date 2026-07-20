@@ -15,8 +15,8 @@ function attackerLossFraction(report: BattleReport): number {
 const FAST_HEAVY = mkUnit('fast-heavy', {
   skill: 35,
   combat: {
-    figures: 6,
-    hits: 4,
+    figures: 240,
+    hits: 2,
     melee: { attack: 5, damage: 3, reach: 1 },
     armor: 2,
     speed: 2,

@@ -29,15 +29,30 @@ import {
   applyDamage,
   healCombatant,
   totalHp,
+  recordCasualties,
   DIRS,
   inField,
   combatantAt,
   livingAllies,
+  BREATH_SWATH,
+  BREATH_DENSITY_REF,
+  BREATH_MIN_DENSITY,
+  HEAL_REF_FIGURES,
+  HEAL_MAX_SCALE,
+  POISON_PER_FIGURE,
+  POISON_TICK_FRACTION,
+  POISON_TICK_MIN,
 } from './internal';
-import { moraleCheck } from './morale';
 
-/** Poison applied per hit is small; it lingers and grinds. */
-const POISON_RATE = 2; // damage dealt per tick from the poison pool
+/**
+ * Heals scale with the pool being refilled (percent-ish): a regenerating swarm
+ * or a holy-aura tending a full regiment mends proportionally, while a lone
+ * monster mends at its authored rate. Capped so it can't outrun all damage.
+ */
+function scaledHeal(base: number, targetMaxFigures: number): number {
+  const scale = Math.min(HEAL_MAX_SCALE, Math.max(1, targetMaxFigures / HEAL_REF_FIGURES));
+  return Math.round(base * scale);
+}
 
 /**
  * Can `attacker` land a MELEE blow on `target`? Flyers can only be reached in
@@ -68,12 +83,17 @@ export function applyLifeDrain(ctx: BattleContext, attacker: Combatant, damageDe
   }
 }
 
-/** poison: on a landed melee hit, queue poison damage on a non-undead target. */
-export function applyPoisonOnHit(attacker: Combatant, target: Combatant): boolean {
+/**
+ * poison: envenoms a non-undead target on a landed melee exchange. Strength
+ * scales with the number of figures actually struck (`landed`) — a poisoned
+ * blade that catches forty men queues far more lingering damage than one that
+ * grazes three. The pool is then bled proportionally in endOfTickEffects.
+ */
+export function applyPoisonOnHit(attacker: Combatant, target: Combatant, landed: number): boolean {
   const poison = abilityOf(attacker.def, 'poison');
   if (!poison) return false;
   if (hasAbility(target.def, 'undead')) return false; // immune
-  target.poison += poison.strength;
+  target.poison += poison.strength * Math.max(1, landed) * POISON_PER_FIGURE;
   return true;
 }
 
@@ -134,14 +154,22 @@ export function fireBreath(ctx: BattleContext, source: Combatant, tx: number, ty
     magnitude: breath.damage,
   });
   for (const t of targets) {
-    const res = applyDamage(t, breath.damage); // armor-ignoring blast
+    // AREA EFFECT AT SCALE: the blast washes a SWATH of the formation, not a
+    // single blow. The swath widens with the ranks' density (figures present),
+    // and each caught figure takes up to `breath.damage` armor-ignoring damage.
+    // Against massed 1-hit levies this reaps dozens-to-hundreds; against a lone
+    // great monster (one figure) it merely chips `breath.damage` off the pool.
+    const density = Math.max(BREATH_MIN_DENSITY, Math.min(1, t.figures / BREATH_DENSITY_REF));
+    const caught = Math.max(1, Math.min(t.figures, Math.round(BREATH_SWATH * density)));
+    const poolDamage = caught * Math.min(breath.damage, t.maxHits);
+    const res = applyDamage(t, poolDamage); // armor-ignoring blast
     ctx.events.push({
       type: 'damage',
       tick: ctx.tick,
       targetId: t.id,
       sourceId: source.id,
       kind: 'breath',
-      amount: breath.damage,
+      amount: poolDamage,
       figuresLost: res.figuresLost,
       figuresAfter: t.figures,
       hpAfter: totalHp(t),
@@ -150,7 +178,9 @@ export function fireBreath(ctx: BattleContext, source: Combatant, tx: number, ty
     if (res.destroyed) {
       ctx.events.push({ type: 'death', tick: ctx.tick, unitId: t.id, at: { x: t.x, y: t.y } });
     } else if (res.figuresLost > 0) {
-      moraleCheck(ctx, t, 'casualties', 8 + res.figuresLost * 6);
+      // Counts toward this tick's proportional morale check (end of tick) — a
+      // swath torn out of the ranks is exactly what breaks a formation.
+      recordCasualties(t, res.figuresLost, 'casualties');
     }
   }
   return true;
@@ -167,9 +197,11 @@ export function endOfTickEffects(ctx: BattleContext): void {
   }
 
   // Poison DoT (ignores armor; undead can never be poisoned so pool stays 0).
+  // Bleeds a proportion of the outstanding pool each tick (min POISON_TICK_MIN),
+  // so a heavily-envenomed regiment grinds down proportionally.
   for (const c of ctx.combatants) {
     if (c.figures <= 0 || c.poison <= 0) continue;
-    const dmg = Math.min(c.poison, POISON_RATE);
+    const dmg = Math.min(c.poison, Math.max(POISON_TICK_MIN, Math.round(c.poison * POISON_TICK_FRACTION)));
     c.poison -= dmg;
     const res = applyDamage(c, dmg);
     ctx.events.push({
@@ -187,7 +219,7 @@ export function endOfTickEffects(ctx: BattleContext): void {
     if (res.destroyed) {
       ctx.events.push({ type: 'death', tick: ctx.tick, unitId: c.id, at: { x: c.x, y: c.y } });
     } else if (res.figuresLost > 0) {
-      moraleCheck(ctx, c, 'casualties', res.figuresLost * 5);
+      recordCasualties(c, res.figuresLost, 'casualties');
     }
   }
 
@@ -196,7 +228,7 @@ export function endOfTickEffects(ctx: BattleContext): void {
     if (c.figures <= 0) continue;
     const regen = abilityOf(c.def, 'regeneration');
     if (!regen) continue;
-    const healed = healCombatant(c, regen.perTick);
+    const healed = healCombatant(c, scaledHeal(regen.perTick, c.maxFigures));
     if (healed > 0) {
       ctx.events.push({
         type: 'heal',
@@ -222,7 +254,7 @@ export function endOfTickEffects(ctx: BattleContext): void {
       if (ally.side !== src.side || ally.figures <= 0) continue;
       if (totalHp(ally) >= ally.maxFigures * ally.maxHits) continue;
       if (chebyshev(src.x, src.y, ally.x, ally.y) > aura.radius) continue;
-      const healed = healCombatant(ally, aura.healPerTick);
+      const healed = healCombatant(ally, scaledHeal(aura.healPerTick, ally.maxFigures));
       if (healed > 0) {
         healedIds.push(ally.id);
         ctx.events.push({

@@ -24,6 +24,13 @@ import {
   abilityOf,
   homeEdgeX,
   dirIndexTo,
+  MORALE_TICK_FRACTION,
+  MORALE_ATTRITION_FLOOR,
+  CASUALTY_BASE,
+  CASUALTY_TICK_K,
+  CASUALTY_ATTRITION_K,
+  ROUT_CONTAGION_RADIUS,
+  ROUT_CONTAGION_PENALTY,
 } from './internal';
 import type { MoraleTrigger } from './events';
 
@@ -63,6 +70,7 @@ function faceHome(c: Combatant, ctx: BattleContext): void {
 function rout(ctx: BattleContext, c: Combatant): void {
   c.status = 'routing';
   c.brokenOnce = true;
+  c.routedTick = ctx.tick;
   c.morale = Math.max(0, c.morale - 15);
   faceHome(c, ctx);
   ctx.events.push({ type: 'rout', tick: ctx.tick, unitId: c.id, at: { x: c.x, y: c.y } });
@@ -155,6 +163,48 @@ export function applyFearAuras(ctx: BattleContext): void {
     if (worst > 0) {
       c.lastFearTick = ctx.tick;
       moraleCheck(ctx, c, 'fear', worst);
+    }
+  }
+}
+
+/**
+ * Proportional casualty morale, once per unit at end of tick. A regiment tests
+ * its nerve when a single tick was bloody (≥ MORALE_TICK_FRACTION of its
+ * start-of-tick strength) or once cumulative attrition passes the floor. The
+ * shock scales with the fraction lost THIS tick and with overall depletion, so
+ * fresh troops shrug off a skirmish while a half-dead line breaks on far less.
+ * This is what makes a breath weapon or a flanked massacre *rout* a formation
+ * rather than merely whittle it — the heart of regiment-scale morale.
+ */
+export function applyCasualtyMorale(ctx: BattleContext): void {
+  for (const c of ctx.combatants) {
+    if (c.figures <= 0 || c.status !== 'fighting') continue;
+    if (c.lostThisTick <= 0 || c.figuresAtTickStart <= 0) continue;
+    const tickFrac = c.lostThisTick / c.figuresAtTickStart;
+    const overallFrac = 1 - c.figures / c.maxFigures;
+    if (tickFrac < MORALE_TICK_FRACTION && overallFrac < MORALE_ATTRITION_FLOOR) continue;
+    const penalty = CASUALTY_BASE + tickFrac * CASUALTY_TICK_K + overallFrac * CASUALTY_ATTRITION_K;
+    moraleCheck(ctx, c, c.worstCasualtyTrigger ?? 'casualties', penalty);
+  }
+}
+
+/**
+ * Rout contagion: a formation breaking is contagious. Units that routed THIS
+ * tick test the nerve of every still-fighting ally within
+ * ROUT_CONTAGION_RADIUS. One pass (keyed on routedTick) — a chain of breaks
+ * unfolds across ticks, never in an unbounded loop within one tick.
+ */
+export function applyRoutContagion(ctx: BattleContext): void {
+  const routed = ctx.combatants.filter((c) => c.routedTick === ctx.tick && c.status === 'routing');
+  if (routed.length === 0) return;
+  for (const c of ctx.combatants) {
+    if (c.figures <= 0 || c.status !== 'fighting' || !checksMorale(c.def)) continue;
+    for (const r of routed) {
+      if (r.side !== c.side || r.id === c.id) continue;
+      if (chebyshev(r.x, r.y, c.x, c.y) <= ROUT_CONTAGION_RADIUS) {
+        moraleCheck(ctx, c, 'ally-rout', ROUT_CONTAGION_PENALTY);
+        break;
+      }
     }
   }
 }

@@ -66,6 +66,10 @@ function makeCombatant(u: BattleUnitInput, side: Side): Combatant | null {
     movedThisActivation: 0,
     engagedLast: [],
     brokenOnce: false,
+    figuresAtTickStart: figures,
+    lostThisTick: 0,
+    worstCasualtyTrigger: null,
+    routedTick: -1,
   };
 }
 

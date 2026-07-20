@@ -12,9 +12,12 @@ type CombatOverride = Partial<Omit<UnitCombatStats, 'melee' | 'ranged'>> & {
   ranged?: UnitCombatStats['ranged'];
 };
 
+// REGIMENT SCALE (mirrors the anchor table in src/data/units/core.ts, which the
+// sim may not import). Foot ~400 figures × 1 hit; the frontage model does the
+// rest. Deviate for identity, not power creep.
 const BASE_COMBAT: UnitCombatStats = {
-  figures: 6,
-  hits: 3,
+  figures: 400,
+  hits: 1,
   melee: { attack: 4, damage: 2, reach: 1 },
   armor: 1,
   speed: 2,
@@ -58,21 +61,21 @@ export function mkUnit(
 // --- Archetype exemplars ---------------------------------------------------
 
 export const SPEARMEN = mkUnit('spearmen', {
-  combat: { figures: 6, hits: 3, melee: { attack: 4, damage: 2, reach: 2 }, armor: 1, speed: 2 },
+  combat: { figures: 400, hits: 1, melee: { attack: 4, damage: 2, reach: 2 }, armor: 1, speed: 2 },
 });
 
 export const SWORDSMEN = mkUnit('swordsmen', {
-  combat: { figures: 6, hits: 3, melee: { attack: 5, damage: 3, reach: 1 }, armor: 2, speed: 2 },
+  combat: { figures: 400, hits: 1, melee: { attack: 5, damage: 3, reach: 1 }, armor: 2, speed: 2 },
 });
 
 export const ARCHERS = mkUnit('archers', {
   role: 'ranged',
   skill: 50,
   combat: {
-    figures: 6,
-    hits: 2,
+    figures: 320,
+    hits: 1,
     melee: { attack: 2, damage: 1, reach: 1 },
-    ranged: { attack: 5, damage: 2, range: 6, ammo: 10 },
+    ranged: { attack: 4, damage: 2, range: 6, ammo: 8 },
     armor: 0,
     speed: 2,
   },
@@ -83,8 +86,8 @@ export const CAVALRY = mkUnit('cavalry', {
   skill: 40,
   abilities: [{ type: 'charge', bonus: 4 }],
   combat: {
-    figures: 4,
-    hits: 4,
+    figures: 240,
+    hits: 2,
     melee: { attack: 5, damage: 3, reach: 1 },
     armor: 2,
     speed: 4,
@@ -97,8 +100,8 @@ export const CAVALRY = mkUnit('cavalry', {
 export const MILITIA = mkUnit('militia', {
   skill: 15,
   combat: {
-    figures: 6,
-    hits: 3,
+    figures: 350,
+    hits: 1,
     melee: { attack: 3, damage: 2, reach: 1 },
     armor: 1,
     speed: 2,
@@ -112,8 +115,8 @@ export const MILITIA = mkUnit('militia', {
 export const PIKES = mkUnit('pikes', {
   skill: 55,
   combat: {
-    figures: 6,
-    hits: 3,
+    figures: 240,
+    hits: 2,
     melee: { attack: 4, damage: 2, reach: 2 },
     armor: 2,
     speed: 1,
@@ -126,8 +129,8 @@ export const PIKES = mkUnit('pikes', {
 export const HEAVY_INFANTRY = mkUnit('heavy-infantry', {
   skill: 35,
   combat: {
-    figures: 6,
-    hits: 4,
+    figures: 240,
+    hits: 2,
     melee: { attack: 5, damage: 3, reach: 1 },
     armor: 2,
     speed: 1,

@@ -6,8 +6,8 @@ const FEARLESS_MILITIA = mkUnit('zealots', {
   skill: 15,
   abilities: [{ type: 'fearless' }],
   combat: {
-    figures: 6,
-    hits: 3,
+    figures: 350,
+    hits: 1,
     melee: { attack: 3, damage: 2, reach: 1 },
     armor: 1,
     speed: 2,
@@ -21,8 +21,8 @@ const SKELETONS = mkUnit('skeletons', {
   skill: 15,
   abilities: [{ type: 'undead' }],
   combat: {
-    figures: 6,
-    hits: 3,
+    figures: 350,
+    hits: 1,
     melee: { attack: 3, damage: 2, reach: 1 },
     armor: 1,
     speed: 2,
