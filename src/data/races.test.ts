@@ -118,6 +118,80 @@ describe('races', () => {
       }
     }
   });
+
+  // A deliberately small, obvious-traps-only guard list. This is not meant to
+  // catch every real place name on Earth — just the landmark capitals and
+  // holy cities a generator might reach for out of habit.
+  const REAL_WORLD_CITY_GUARD_LIST = [
+    'London',
+    'Paris',
+    'Rome',
+    'Moscow',
+    'Cairo',
+    'Kyoto',
+    'Tokyo',
+    'Beijing',
+    'Salt Lake City',
+    'Jerusalem',
+    'Mecca',
+    'Babylon',
+    'Athens',
+    'Venice',
+    'Berlin',
+    'Vienna',
+    'Damascus',
+    'Baghdad',
+    'Istanbul',
+    'New York',
+  ];
+
+  describe('cityNames', () => {
+    it('gives every race at least 12 city names', () => {
+      for (const race of races) {
+        expect(race.cityNames.length, race.id).toBeGreaterThanOrEqual(12);
+      }
+    });
+
+    it('has every name non-empty, trimmed, and at most 24 characters', () => {
+      for (const race of races) {
+        for (const name of race.cityNames) {
+          expect(name.length, `${race.id} -> "${name}"`).toBeGreaterThan(0);
+          expect(name, `${race.id} -> "${name}"`).toBe(name.trim());
+          expect(name.length, `${race.id} -> "${name}"`).toBeLessThanOrEqual(24);
+        }
+      }
+    });
+
+    it('is ASCII, allowing only letters, spaces, apostrophes, and hyphens', () => {
+      const ASCII_NAME = /^[A-Za-z0-9][A-Za-z0-9' -]*$/;
+      for (const race of races) {
+        for (const name of race.cityNames) {
+          expect(name, `${race.id} -> "${name}"`).toMatch(ASCII_NAME);
+        }
+      }
+    });
+
+    it('has 360 globally unique city names across all races', () => {
+      const all = races.flatMap((r) => r.cityNames);
+      expect(all).toHaveLength(360);
+      expect(new Set(all).size).toBe(all.length);
+    });
+
+    it('never uses a name from the real-world-city guard list', () => {
+      const guard = new Set(REAL_WORLD_CITY_GUARD_LIST.map((n) => n.toLowerCase()));
+      for (const race of races) {
+        for (const name of race.cityNames) {
+          expect(guard.has(name.toLowerCase()), `${race.id} -> "${name}"`).toBe(false);
+        }
+      }
+    });
+
+    it("lists the race's traditional capital first", () => {
+      for (const race of races) {
+        expect(race.cityNames[0], race.id).toBeTruthy();
+      }
+    });
+  });
 });
 
 describe('buildings', () => {
