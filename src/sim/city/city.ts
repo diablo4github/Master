@@ -18,14 +18,20 @@ import { isPassable, chebyshev } from '../units/units';
 // ---------------------------------------------------------------------------
 
 /**
- * Civic yield every population point contributes REGARDLESS of terrain — taxes
- * and scholars. This is why research is never terrain-bound: a city on barren
- * rock still researches through its people. Terrain drives food/production/
- * gold/mana; population drives research (and a little gold).
+ * Civic yield every population point contributes REGARDLESS of terrain —
+ * taxes, scholars, and the town's own labor. Research is never terrain-bound
+ * (a city on barren rock still researches through its people), and the small
+ * production floor means a farming town can still raise a granary: villagers
+ * build even where no quarry or forest is worked. Terrain remains the
+ * dominant source of food/production/gold/mana — a hills city out-builds a
+ * breadbasket several times over.
  */
-export const CIVIC_YIELD_PER_POP: Readonly<Pick<YieldBundle, 'research' | 'gold'>> = {
+export const CIVIC_YIELD_PER_POP: Readonly<
+  Pick<YieldBundle, 'research' | 'gold' | 'production'>
+> = {
   research: 1,
   gold: 0.5,
+  production: 0.5,
 };
 
 /** Food consumed per population point per turn. */
@@ -349,9 +355,10 @@ export function computeCityYields(state: GameState, content: GameContent, city: 
     const tile = getTile(map, x, y);
     if (tile) addPartial(raw, TERRAIN_YIELDS[tile.terrain]);
   }
-  // Civic yields: research and a little gold from the people themselves.
+  // Civic yields: research, taxes, and town labor from the people themselves.
   raw.research += city.population * CIVIC_YIELD_PER_POP.research;
   raw.gold += city.population * CIVIC_YIELD_PER_POP.gold;
+  raw.production += city.population * CIVIC_YIELD_PER_POP.production;
 
   return applyYieldPipeline(state, content, city, raw);
 }

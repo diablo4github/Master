@@ -115,14 +115,15 @@ describe('workedTiles', () => {
 describe('computeCityYields — hand-computed arithmetic', () => {
   it('orc city, pop 3, catchment all grassland', () => {
     // Worked = center + 3 grassland = 4 tiles x {food:2} => food 8.
-    // Civic per pop {research:1, gold:0.5}: pop 3 => research 3, gold 1.5.
-    // raw = { food:8, production:0, gold:1.5, research:3, mana:0 }.
+    // Civic per pop {research:1, gold:0.5, production:0.5}: pop 3 =>
+    //   research 3, gold 1.5, production 1.5 (town labor floor).
+    // raw = { food:8, production:1.5, gold:1.5, research:3, mana:0 }.
     // Orc race multipliers are all 1.0; no buildings/studies. Floor each axis:
-    //   { food:8, production:0, gold:1, research:3, mana:0 }.
+    //   { food:8, production:1, gold:1, research:3, mana:0 }.
     const state = terrainState('grassland', { population: 3 });
     expect(computeCityYields(state, CONTENT, state.cities[0]!)).toEqual({
       food: 8,
-      production: 0,
+      production: 1,
       gold: 1,
       research: 3,
       mana: 0,
@@ -131,20 +132,20 @@ describe('computeCityYields — hand-computed arithmetic', () => {
 
   it('applies a building flat then a completed-study multiplier', () => {
     // workshop adds +2 production flat; gold-magic multiplies gold x2.
-    //   production: (raw 0)*1 + 2 = 2  -> floor 2
-    //   gold:       (raw 1.5)*1        -> x2 = 3 -> floor 3
+    //   production: (raw 1.5 civic labor)*1 + 2 = 3.5 -> floor 3
+    //   gold:       (raw 1.5)*1                -> x2 = 3 -> floor 3
     const state = terrainState('grassland', { population: 3, buildings: ['workshop'] });
     state.players[0]!.completedStudies = ['gold-magic'];
     const y = computeCityYields(state, CONTENT, state.cities[0]!);
-    expect(y.production).toBe(2);
+    expect(y.production).toBe(3);
     expect(y.gold).toBe(3);
     expect(y.food).toBe(8); // unchanged
   });
 
   it('sums flats before multipliers (foundry multiplies the workshop flat)', () => {
-    // production: (0 + 2 workshop) * 1.5 foundry = 3 -> floor 3
+    // production: (1.5 civic + 2 workshop) * 1.5 foundry = 5.25 -> floor 5
     const state = terrainState('grassland', { population: 3, buildings: ['workshop', 'foundry'] });
-    expect(computeCityYields(state, CONTENT, state.cities[0]!).production).toBe(3);
+    expect(computeCityYields(state, CONTENT, state.cities[0]!).production).toBe(5);
   });
 
   it('terrain matters: a grassland site out-eats a tundra site ~2:1+', () => {
