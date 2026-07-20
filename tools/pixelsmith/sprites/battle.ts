@@ -218,32 +218,38 @@ function cavalry(): Sprite {
 function brute(): Sprite {
   const g = makeGrid(SIZE);
   // small eyes, jutting brow, tusks — big blunt head
-  fillRect(g, 5, 1, 10, 5, 'sk');
-  fillRect(g, 5, 1, 6, 2, 'skl');
-  fillRect(g, 9, 3, 10, 5, 'skd');
-  plot(g, [[6, 3], [9, 3]], 'o');
-  plot(g, [[6, 5], [9, 5]], 'tu');
-  // massive shoulders/torso, wider than the head
-  fillRect(g, 3, 6, 12, 11, 'sk');
-  fillRect(g, 3, 6, 5, 7, 'skl');
-  fillRect(g, 10, 9, 12, 11, 'skd');
-  fillRect(g, 3, 11, 12, 11, 'skd');
+  fillRect(g, 4, 1, 9, 5, 'sk');
+  fillRect(g, 4, 1, 5, 2, 'skl');
+  fillRect(g, 8, 3, 9, 5, 'skd');
+  plot(g, [[5, 3], [8, 3]], 'o');
+  plot(g, [[5, 4], [8, 4]], 'tu');
+  // massive shoulders/torso, wider than the head, but kept clear of column
+  // 10+ so the club silhouette (below) never touches or merges with it.
+  fillRect(g, 2, 6, 9, 11, 'sk');
+  fillRect(g, 2, 6, 4, 7, 'skl');
+  fillRect(g, 7, 9, 9, 11, 'skd');
+  fillRect(g, 2, 11, 9, 11, 'skd');
   // loincloth
-  fillRect(g, 4, 10, 11, 12, 'lo');
-  // club, raised overhead in both hands
-  fillRect(g, 11, 1, 13, 5, 'cl');
-  fillRect(g, 11, 1, 11, 5, 'cll');
-  fillRect(g, 13, 2, 13, 5, 'cld');
-  fillRect(g, 10, 6, 13, 8, 'sk');
-  fillRect(g, 2, 7, 3, 9, 'sk');
+  fillRect(g, 3, 10, 8, 12, 'lo');
+  // off-hand sliver, back arm
+  fillRect(g, 1, 7, 2, 9, 'sk');
+  // club, raised well clear overhead and to the right — a bulbous head on
+  // a diagonal haft, separated from the torso by transparent pixels so it
+  // never reads as a shoulder pad or pack.
+  fillRect(g, 12, 1, 14, 3, 'cl');
+  fillRect(g, 12, 1, 12, 2, 'cll');
+  fillRect(g, 14, 2, 14, 3, 'cld');
+  plot(g, [[11, 4], [12, 4], [11, 5], [12, 5], [10, 6]], 'ha');
+  // gripping hand at the base of the haft
+  fillRect(g, 9, 6, 10, 7, 'sk');
   // short thick legs
-  fillRect(g, 4, 12, 6, 14, 'sk');
-  fillRect(g, 9, 12, 11, 14, 'sk');
-  fillRect(g, 3, 15, 7, 15, 'skd');
-  fillRect(g, 8, 15, 12, 15, 'skd');
+  fillRect(g, 3, 12, 5, 14, 'sk');
+  fillRect(g, 7, 12, 9, 14, 'sk');
+  fillRect(g, 2, 15, 6, 15, 'skd');
+  fillRect(g, 6, 15, 10, 15, 'skd');
   return battle('brute', {
     o: OUTLINE, sk: SWAMP.sick, skl: EARTH.light, skd: SWAMP.dark, tu: DEATH.boneWhite,
-    lo: EARTH.shadow, cl: EARTH.mid, cll: EARTH.light, cld: EARTH.shadow,
+    lo: EARTH.shadow, cl: EARTH.mid, cll: EARTH.light, cld: EARTH.shadow, ha: EARTH.dark,
   }, g);
 }
 
@@ -364,21 +370,34 @@ function mage(): Sprite {
 // raised. Same bone family as the units.ts skeleton but a rangier pose.
 function undead(): Sprite {
   const g = makeGrid(SIZE);
-  fillRect(g, 6, 2, 9, 5, 'bo');
-  setPixel(g, 7, 4, 'ey');
+  // skull: two separated hollow sockets either side of a shadowed nasal
+  // bridge, so it reads as a skull rather than one black visor bar.
+  fillRect(g, 5, 2, 9, 5, 'bo');
+  fillRect(g, 5, 2, 6, 2, 'bol');
+  fillRect(g, 8, 4, 9, 5, 'bod');
+  setPixel(g, 6, 4, 'ey');
   setPixel(g, 8, 4, 'ey');
-  fillRect(g, 6, 2, 7, 2, 'bol');
-  fillRect(g, 8, 5, 9, 5, 'bod');
-  // hunched ribcage, torso leaning right
-  fillRect(g, 6, 6, 9, 10, 'bo');
-  fillRect(g, 6, 7, 6, 9, 'bod');
-  fillRect(g, 8, 7, 8, 9, 'bod');
-  // tattered cloth strips over the hips
-  plot(g, [[6, 10], [7, 11], [9, 10], [8, 12]], 'cl');
-  // one arm raised clawing forward, one hanging low
+  setPixel(g, 7, 4, 'bod');
+  setPixel(g, 7, 5, 'bod');
+  // ribcage: a shadowed sternum groove down the middle plus notched gaps
+  // punched clear through the silhouette so it reads as bone struts, not
+  // a solid robed torso.
+  fillRect(g, 5, 6, 9, 10, 'bo');
+  fillRect(g, 7, 6, 7, 10, 'bod');
+  setPixel(g, 5, 8, '.');
+  setPixel(g, 9, 8, '.');
+  fillRect(g, 5, 7, 5, 7, 'bod');
+  fillRect(g, 9, 7, 9, 7, 'bod');
+  fillRect(g, 5, 9, 5, 9, 'bod');
+  fillRect(g, 9, 9, 9, 9, 'bod');
+  // ragged cloth hem, jagged rather than a clean line — breaks up the
+  // silhouette so it doesn't read as a smooth robe.
+  plot(g, [[5, 10], [6, 11], [7, 10], [8, 12], [9, 11], [6, 12]], 'cl');
+  // one arm raised, clawed hand with two splayed fingers; one hangs low
   fillRect(g, 9, 5, 12, 6, 'bo');
-  plot(g, [[12, 4], [13, 4], [12, 3]], 'bo');
-  fillRect(g, 5, 8, 5, 12, 'bo');
+  plot(g, [[12, 3], [13, 3], [12, 4], [14, 4]], 'bo');
+  fillRect(g, 4, 8, 4, 12, 'bo');
+  plot(g, [[3, 12], [3, 13], [5, 13]], 'bo');
   // uneven legs, one shorter — a shambling stance
   fillRect(g, 6, 11, 7, 14, 'bo');
   fillRect(g, 8, 11, 9, 13, 'bo');
