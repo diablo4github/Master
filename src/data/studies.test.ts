@@ -272,4 +272,62 @@ describe('magic shelf (school studies)', () => {
       expect(study.effects.unlocksUnits ?? [], study.id).toEqual([]);
     }
   });
+
+  it('every magic study has a tier of 1, 2, or 3', () => {
+    for (const study of magicStudies) {
+      expect([1, 2, 3], `${study.id} has invalid tier ${study.tier}`).toContain(study.tier);
+    }
+  });
+
+  it('has exactly 2 studies per tier per school', () => {
+    for (const school of SCHOOL_IDS) {
+      for (const tier of [1, 2, 3] as const) {
+        const count = magicStudies.filter((s) => s.school === school && s.tier === tier).length;
+        expect(count, `school ${school} tier ${tier} does not have exactly 2 studies`).toBe(2);
+      }
+    }
+  });
+
+  it('tier is non-decreasing along every requires chain, forming ordered 1,1,2,2,3,3 blocks', () => {
+    // Walk each school's chain from its root (found structurally, not by parsing
+    // the id) and confirm tiers appear in order: two tier-1s, two tier-2s, two
+    // tier-3s. This also guarantees tier never decreases along the chain.
+    for (const school of SCHOOL_IDS) {
+      const schoolStudies = magicStudies.filter((s) => s.school === school);
+      const root = schoolStudies.find((s) => !s.requires || s.requires.length === 0);
+      expect(root, `school ${school} has no root study`).toBeDefined();
+      if (!root) continue;
+
+      // Map each study to whichever study in the chain requires it directly.
+      const successorOf = new Map<string, (typeof schoolStudies)[number]>();
+      for (const s of schoolStudies) {
+        const req = s.requires?.[0];
+        if (req) successorOf.set(req, s);
+      }
+
+      const chainTiers: (number | undefined)[] = [];
+      let current: (typeof schoolStudies)[number] | undefined = root;
+      while (current) {
+        chainTiers.push(current.tier);
+        current = successorOf.get(current.id);
+      }
+
+      expect(chainTiers, `school ${school} chain tiers`).toEqual([1, 1, 2, 2, 3, 3]);
+
+      // Non-decreasing is implied by the exact match above, but assert it
+      // directly too so the intent is explicit and independent of the shape.
+      for (let i = 1; i < chainTiers.length; i++) {
+        expect(
+          (chainTiers[i] ?? 0) >= (chainTiers[i - 1] ?? 0),
+          `school ${school}: tier decreased along the chain at position ${i}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('no race-owned study carries a tier', () => {
+    for (const id of raceOfStudy.keys()) {
+      expect(STUDIES[id]?.tier, `${id} is race-owned but has a tier set`).toBeUndefined();
+    }
+  });
 });

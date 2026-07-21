@@ -1323,6 +1323,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-life-1-consecration',
     name: 'Consecration',
     school: 'life',
+    tier: 1,
     cost: 58,
     effects: {
       cityEffects: { yields: { mana: 1 }, unrestReduction: 1 },
@@ -1335,6 +1336,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-life-2-benediction',
     name: 'Benediction',
     school: 'life',
+    tier: 1,
     cost: 145,
     requires: ['magic-life-1-consecration'],
     effects: {
@@ -1348,6 +1350,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-life-3-sanctified-doctrine',
     name: 'Sanctified Doctrine',
     school: 'life',
+    tier: 2,
     cost: 310,
     requires: ['magic-life-2-benediction'],
     effects: {
@@ -1361,6 +1364,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-life-4-exalted-communion',
     name: 'Exalted Communion',
     school: 'life',
+    tier: 2,
     cost: 560,
     requires: ['magic-life-3-sanctified-doctrine'],
     effects: {
@@ -1374,6 +1378,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-life-5-celestial-mandate',
     name: 'Celestial Mandate',
     school: 'life',
+    tier: 3,
     cost: 980,
     requires: ['magic-life-4-exalted-communion'],
     effects: {
@@ -1391,6 +1396,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-life-6-apotheosis-of-the-white-flame',
     name: 'Apotheosis of the White Flame',
     school: 'life',
+    tier: 3,
     cost: 1480,
     requires: ['magic-life-5-celestial-mandate'],
     effects: {
@@ -1414,6 +1420,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-death-1-grave-tithe',
     name: 'Grave Tithe',
     school: 'death',
+    tier: 1,
     cost: 55,
     effects: {
       cityEffects: { yields: { mana: 2, gold: 1 } },
@@ -1426,6 +1433,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-death-2-bone-toll',
     name: 'Bone Toll',
     school: 'death',
+    tier: 1,
     cost: 140,
     requires: ['magic-death-1-grave-tithe'],
     effects: {
@@ -1439,6 +1447,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-death-3-charnel-covenant',
     name: 'Charnel Covenant',
     school: 'death',
+    tier: 2,
     cost: 300,
     requires: ['magic-death-2-bone-toll'],
     effects: {
@@ -1452,6 +1461,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-death-4-black-tithing',
     name: 'Black Tithing',
     school: 'death',
+    tier: 2,
     cost: 570,
     requires: ['magic-death-3-charnel-covenant'],
     effects: {
@@ -1465,6 +1475,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-death-5-reapers-accord',
     name: "Reaper's Accord",
     school: 'death',
+    tier: 3,
     cost: 1020,
     requires: ['magic-death-4-black-tithing'],
     effects: {
@@ -1478,6 +1489,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-death-6-dominion-of-the-grave',
     name: 'Dominion of the Grave',
     school: 'death',
+    tier: 3,
     cost: 1490,
     requires: ['magic-death-5-reapers-accord'],
     effects: {
@@ -1499,6 +1511,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-chaos-1-forge-fire',
     name: 'Forge-Fire Rite',
     school: 'chaos',
+    tier: 1,
     cost: 60,
     effects: {
       cityEffects: { yieldMultipliers: { production: 1.06 } },
@@ -1511,6 +1524,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-chaos-2-cinder-doctrine',
     name: 'Cinder Doctrine',
     school: 'chaos',
+    tier: 1,
     cost: 155,
     requires: ['magic-chaos-1-forge-fire'],
     effects: {
@@ -1524,6 +1538,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-chaos-3-wildfire-rites',
     name: 'Wildfire Rites',
     school: 'chaos',
+    tier: 2,
     cost: 330,
     requires: ['magic-chaos-2-cinder-doctrine'],
     effects: {
@@ -1537,6 +1552,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-chaos-4-molten-covenant',
     name: 'Molten Covenant',
     school: 'chaos',
+    tier: 2,
     cost: 600,
     requires: ['magic-chaos-3-wildfire-rites'],
     effects: {
@@ -1550,19 +1566,22 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-chaos-5-inferno-mastery',
     name: 'Inferno Mastery',
     school: 'chaos',
+    tier: 3,
     cost: 1010,
     requires: ['magic-chaos-4-molten-covenant'],
     effects: {
       cityEffects: { yields: { production: 10 }, yieldMultipliers: { production: 1.25 } },
     },
     description:
-      'The wizard learns to hold a firestorm in cupped hands and pour it, ' +
-      'precisely, into every foundry they own.',
+      'The wizard cups a captive firestorm in bare hands — an elemental fury ' +
+      'that would flay lesser flesh to the bone — and pours it, unblinking, ' +
+      'into every foundry they own.',
   },
   'magic-chaos-6-maelstrom-forged': {
     id: 'magic-chaos-6-maelstrom-forged',
     name: 'Maelstrom-Forged',
     school: 'chaos',
+    tier: 3,
     cost: 1500,
     requires: ['magic-chaos-5-inferno-mastery'],
     effects: {
@@ -1581,6 +1600,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-nature-1-first-growth',
     name: 'First Growth',
     school: 'nature',
+    tier: 1,
     cost: 62,
     effects: {
       cityEffects: { yields: { food: 2 } },
@@ -1593,6 +1613,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-nature-2-verdant-rite',
     name: 'Verdant Rite',
     school: 'nature',
+    tier: 1,
     cost: 148,
     requires: ['magic-nature-1-first-growth'],
     effects: {
@@ -1606,6 +1627,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-nature-3-wildroot-communion',
     name: 'Wildroot Communion',
     school: 'nature',
+    tier: 2,
     cost: 315,
     requires: ['magic-nature-2-verdant-rite'],
     effects: {
@@ -1619,6 +1641,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-nature-4-bountiful-harvest',
     name: 'Bountiful Harvest',
     school: 'nature',
+    tier: 2,
     cost: 590,
     requires: ['magic-nature-3-wildroot-communion'],
     effects: {
@@ -1632,19 +1655,22 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-nature-5-primal-blossoming',
     name: 'Primal Blossoming',
     school: 'nature',
+    tier: 3,
     cost: 1000,
     requires: ['magic-nature-4-bountiful-harvest'],
     effects: {
       cityEffects: { yields: { food: 9 }, growthBonus: 0.15 },
     },
     description:
-      'The land itself quickens under the wizard\'s attention, orchards and ' +
-      'pastures growing as if touched by an early, endless spring.',
+      'Something old stirs beneath root and soil at the wizard\'s attention, ' +
+      'and answers with more than any farmer bargained for — orchards and ' +
+      'pastures blossoming as if touched by an early, unnatural spring.',
   },
   'magic-nature-6-worldroot-awakening': {
     id: 'magic-nature-6-worldroot-awakening',
     name: 'Worldroot Awakening',
     school: 'nature',
+    tier: 3,
     cost: 1470,
     requires: ['magic-nature-5-primal-blossoming'],
     effects: {
@@ -1663,6 +1689,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-sorcery-1-arcane-current',
     name: 'Arcane Current',
     school: 'sorcery',
+    tier: 1,
     cost: 65,
     effects: {
       cityEffects: { yields: { mana: 2 }, yieldMultipliers: { research: 1.05 } },
@@ -1675,6 +1702,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-sorcery-2-mirrorweave',
     name: 'Mirrorweave',
     school: 'sorcery',
+    tier: 1,
     cost: 150,
     requires: ['magic-sorcery-1-arcane-current'],
     effects: {
@@ -1688,6 +1716,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-sorcery-3-veiled-doctrine',
     name: 'Veiled Doctrine',
     school: 'sorcery',
+    tier: 2,
     cost: 325,
     requires: ['magic-sorcery-2-mirrorweave'],
     effects: {
@@ -1704,6 +1733,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-sorcery-4-counterspell-canon',
     name: 'Counterspell Canon',
     school: 'sorcery',
+    tier: 2,
     cost: 605,
     requires: ['magic-sorcery-3-veiled-doctrine'],
     effects: {
@@ -1720,6 +1750,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-sorcery-5-labyrinthine-mastery',
     name: 'Labyrinthine Mastery',
     school: 'sorcery',
+    tier: 3,
     cost: 1015,
     requires: ['magic-sorcery-4-counterspell-canon'],
     effects: {
@@ -1736,6 +1767,7 @@ export const STUDIES: Record<string, StudyDef> = {
     id: 'magic-sorcery-6-grand-illusion',
     name: 'Grand Illusion',
     school: 'sorcery',
+    tier: 3,
     cost: 1490,
     requires: ['magic-sorcery-5-labyrinthine-mastery'],
     effects: {
