@@ -152,6 +152,21 @@ async function main(): Promise<void> {
     await page.locator('.research-tab', { hasText: 'Magic' }).click();
     await page.waitForSelector('.study-group-head .chip', { timeout: 8_000 });
     await sleep(250);
+
+    // Tier structure (DESIGN.md: "Magic comes in three tiers per school").
+    // Ithariel Dawnclad is a pure Life mage (1 school -> magicTierCap 3), so
+    // all three tier headers should be present and NONE locked.
+    const tierLabels = await page.locator('.study-tier-head .study-tier-label').allTextContents();
+    console.log(`smoke: magic tier headers = ${JSON.stringify(tierLabels.map((s) => s.trim()))}`);
+    if (!tierLabels.some((t) => /TIER III/.test(t))) {
+      throw new Error('expected a "TIER III" tier header on the Magic tab for a pure Life wizard');
+    }
+    const lockedTierHeaders = await page.locator('.study-tier-head.locked').count();
+    console.log(`smoke: locked tier headers (expect 0 for a pure mage) = ${lockedTierHeaders}`);
+    if (lockedTierHeaders !== 0) {
+      throw new Error(`expected 0 locked tier headers for a pure Life wizard, saw ${lockedTierHeaders}`);
+    }
+
     await page.screenshot({ path: `${OUT}/smoke-10-research.png` });
     await page.keyboard.press('r'); // close research overlay
 

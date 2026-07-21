@@ -24,6 +24,7 @@ import type { LairState, BattleRecord } from './battleTypes';
 import { sideComposition, sideThreat, battleStart } from './battleSummary';
 import { endTurnDecision, endTurnLabel } from './endTurn';
 import { queueView, assembleQueueOptions, type QueueBuildOption } from './queue';
+import { magicSchoolGroups, selectableMagicStudyIds } from './magicTiers';
 import {
   stackRows,
   armyView,
@@ -773,14 +774,21 @@ function panelShellLair(store: Store, title: string, sub: string, body: (Node | 
 function studyRowEl(
   store: Store,
   def: StudyDef,
-  ctx: { completed: readonly string[]; activeId: string | null; progress: number },
+  ctx: {
+    completed: readonly string[];
+    activeId: string | null;
+    progress: number;
+    /** Set by the Magic tab when this study's tier sits above the wizard's cap. */
+    tierLocked?: boolean;
+  },
 ): HTMLElement {
   const content = store.content;
-  const { completed, activeId, progress } = ctx;
+  const { completed, activeId, progress, tierLocked } = ctx;
   const isDone = completed.includes(def.id);
   const isActive = activeId === def.id;
   const missingReq = (def.requires ?? []).filter((r) => !completed.includes(r));
-  const locked = missingReq.length > 0;
+  const reqLocked = missingReq.length > 0;
+  const locked = reqLocked || !!tierLocked;
 
   const status = isDone ? '✓' : isActive ? '◆' : locked ? '🔒' : '○';
   const cls = isDone ? 'done' : isActive ? 'active' : locked ? 'locked' : 'available';
@@ -793,7 +801,9 @@ function studyRowEl(
     ]),
     el('div', { class: 'study-effect', text: summarizeStudy(def) }),
     isActive ? bar(def.cost > 0 ? progress / def.cost : 0, '#8fb4ff') : null,
-    locked
+    // The tier-lock explanation lives on the tier header (one line, not
+    // repeated per row); a missing prereq is still called out per-study.
+    reqLocked
       ? el('div', { class: 'study-req', text: `Requires: ${missingReq.map((r) => content.studies[r]?.name ?? r).join(', ')}` })
       : null,
   ]);
@@ -838,25 +848,36 @@ function researchPanel(store: Store): HTMLElement {
 
   let body: HTMLElement;
   if (tab === 'magic' && schools.length > 0) {
-    // One group per school the wizard knows (color chip + name), each listing
-    // that school's magic-shelf chain (studies flagged with `.school`), ordered
-    // by cost. A pure mage sees a single deep tree.
-    const groups: (Node | null)[] = [];
-    for (const sid of schools) {
+    // One group per school the wizard knows (color chip + name), each split
+    // into three TIER headers (magicSchoolGroups) — tiers above the wizard's
+    // school-focus cap render locked: greyed rows, a lock glyph on the header,
+    // and a one-line cause under it. A pure mage's single school unlocks all
+    // three; an archmage's three schools unlock only Tier I in each.
+    const allStudies = Object.values(content.studies).filter((s): s is StudyDef => !!s);
+    const selectable = selectableMagicStudyIds(allStudies, schools);
+    const groups: Node[] = magicSchoolGroups(allStudies, schools).map(({ school: sid, tiers }) => {
       const school = SCHOOLS[sid];
-      const studies = Object.values(content.studies)
-        .filter((s): s is StudyDef => !!s && s.school === sid)
-        .sort((a, b) => a.cost - b.cost);
-      groups.push(
-        el('div', { class: 'study-group' }, [
-          el('div', { class: 'study-group-head' }, [
-            school ? chip(school.color, school.name) : null,
-            el('span', { class: 'study-group-name', text: `${school?.name ?? sid} magic` }),
-          ]),
-          el('div', { class: 'study-list' }, studies.map((d) => studyRowEl(store, d, ctx))),
+      return el('div', { class: 'study-group' }, [
+        el('div', { class: 'study-group-head' }, [
+          school ? chip(school.color, school.name) : null,
+          el('span', { class: 'study-group-name', text: `${school?.name ?? sid} magic` }),
         ]),
-      );
-    }
+        ...tiers.map((tg) =>
+          el('div', { class: 'study-tier' }, [
+            el('div', { class: `study-tier-head${tg.locked ? ' locked' : ''}` }, [
+              el('span', { class: 'study-tier-label', text: tg.label }),
+              tg.locked ? el('span', { class: 'study-tier-lock', text: '🔒' }) : null,
+            ]),
+            tg.locked ? el('p', { class: 'study-tier-reason', text: tg.lockReason ?? '' }) : null,
+            el(
+              'div',
+              { class: 'study-list' },
+              tg.studies.map((d) => studyRowEl(store, d, { ...ctx, tierLocked: !selectable.has(d.id) })),
+            ),
+          ]),
+        ),
+      ]);
+    });
     body = el('div', { class: 'research-body' }, groups);
   } else {
     const rows = (race?.studies ?? [])

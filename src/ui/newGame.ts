@@ -29,6 +29,7 @@ import { RACES } from '@data/races';
 
 import type { Store } from './store';
 import { el, clear, chip } from './dom';
+import { masteryHint } from './magicTiers';
 
 // Widen the `as const` content to their interface types for ergonomic lookup.
 const SCHOOLS = SCHOOLS_RAW as Record<SchoolId, SchoolDef>;
@@ -134,6 +135,7 @@ export function mountNewGame(root: HTMLElement, store: Store): void {
         el('span', { class: 'wizard-name', text: wiz.name }),
         schoolChips(wiz.schools),
       ]),
+      el('div', { class: 'wizard-mastery', text: masteryHint(wiz.schools.length) }),
       el('div', { class: 'wizard-retorts', text: retortNames(wiz.retorts) }),
       el('div', { class: 'wizard-bio', text: wiz.bio }),
     ]);
