@@ -181,6 +181,14 @@ they never appear in production; they arrive through the casting interface
 your **wizard's magic** (one tree per school you know). One study active at a
 time — committing is the decision.
 
+**Magic comes in three tiers per school**, and depth is bought with focus:
+
+| Focus | Reach | Character |
+|-------|-------|-----------|
+| 1 school | All 3 tiers | Full mastery — tier-3 mysteries and the school dimension are the pure mage's endgame. |
+| 2 schools | Tiers 1–2 of each | The widest total shelf (2×2 tiers) — research value is maximized here. |
+| 3 schools | Tier 1 of each | Shallow arts but the most flexible early game — triples snowball on the map, not in the mystical. |
+
 **Mundane vs mythic**: regiments of men beat regiments of men. Great monsters
 are terror weapons — massed archery alone must not cheaply delete them
 (volleys saturate against a single great beast); bringing one down should cost

@@ -104,6 +104,20 @@ export interface WizardDef {
 }
 
 /**
+ * The deepest magic-study tier a wizard with this many schools may research,
+ * in EVERY school they know. The mastery/generalist dial (see DESIGN.md):
+ *   1 school  -> tier 3 (full mastery, plus their exclusive dimension)
+ *   2 schools -> tier 2 each (the widest total shelf: 2x2 tiers)
+ *   3 schools -> tier 1 each (shallow arts; they snowball on the map instead)
+ */
+export function magicTierCap(schoolCount: number): 0 | 1 | 2 | 3 {
+  if (schoolCount <= 0) return 0;
+  if (schoolCount === 1) return 3;
+  if (schoolCount === 2) return 2;
+  return 1;
+}
+
+/**
  * Which worlds a wizard with these schools may legally START in.
  * Everyone may start in Meridia. Umbra/Lumina require the matching start
  * retort, and: Death wizards can never start in Lumina; Life wizards can
@@ -225,6 +239,12 @@ export interface StudyDef {
    * that school (alongside their race's tree). Race studies omit this.
    */
   school?: SchoolId;
+  /**
+   * Magic-shelf tier (1-3). Access depends on school focus — see
+   * magicTierCap: pure mages reach tier 3, dual-school wizards tier 2,
+   * triple-school wizards tier 1. Race studies omit this.
+   */
+  tier?: 1 | 2 | 3;
   /** Research cost in research points. */
   cost: number;
   requires?: readonly string[];

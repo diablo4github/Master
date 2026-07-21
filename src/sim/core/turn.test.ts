@@ -71,6 +71,65 @@ describe('applyCommand — happy paths', () => {
   });
 });
 
+describe('set-research — magic tier gating by school focus', () => {
+  // Local content extension: a three-tier chaos tree (2 tiers exercised).
+  const TIERED = {
+    ...CONTENT,
+    studies: {
+      ...CONTENT.studies,
+      'magic-chaos-t1': {
+        id: 'magic-chaos-t1', name: 'Cinder Primer', school: 'chaos' as const,
+        tier: 1 as const, cost: 60, effects: { cityEffects: { yields: { mana: 1 } } },
+        description: 'First sparks.',
+      },
+      'magic-chaos-t3': {
+        id: 'magic-chaos-t3', name: 'Worldfire Mystery', school: 'chaos' as const,
+        tier: 3 as const, cost: 1500, effects: { cityEffects: { yields: { mana: 9 } } },
+        description: 'The deep burn, reserved for pure mages.',
+      },
+    },
+  };
+
+  function withSchools(schools: readonly ('chaos' | 'nature' | 'sorcery')[]): GameState {
+    const state = controlled();
+    state.players[0]!.setup = { ...state.players[0]!.setup, schools };
+    return state;
+  }
+
+  it('a pure mage reaches tier 3', () => {
+    const next = applyCommand(withSchools(['chaos']), TIERED, 'player-0', {
+      type: 'set-research', studyId: 'magic-chaos-t3',
+    });
+    expect(next.players[0]!.research.activeStudyId).toBe('magic-chaos-t3');
+  });
+
+  it('a dual-school wizard is barred from tier 3 but reaches tier 1', () => {
+    const dual = withSchools(['chaos', 'nature']);
+    expect(() =>
+      applyCommand(dual, TIERED, 'player-0', { type: 'set-research', studyId: 'magic-chaos-t3' }),
+    ).toThrow(/tier 3 mystery.*tier 2/);
+    const ok = applyCommand(dual, TIERED, 'player-0', {
+      type: 'set-research', studyId: 'magic-chaos-t1',
+    });
+    expect(ok.players[0]!.research.activeStudyId).toBe('magic-chaos-t1');
+  });
+
+  it('a triple-school wizard is capped at tier 1', () => {
+    const triple = withSchools(['chaos', 'nature', 'sorcery']);
+    expect(() =>
+      applyCommand(triple, TIERED, 'player-0', { type: 'set-research', studyId: 'magic-chaos-t3' }),
+    ).toThrow(/may only reach tier 1/);
+  });
+
+  it('race studies are never tier-gated', () => {
+    const triple = withSchools(['chaos', 'nature', 'sorcery']);
+    const next = applyCommand(triple, TIERED, 'player-0', {
+      type: 'set-research', studyId: 'war-drums',
+    });
+    expect(next.players[0]!.research.activeStudyId).toBe('war-drums');
+  });
+});
+
 describe('applyCommand — failure modes throw clear errors', () => {
   it('unknown player', () => {
     expect(() => applyCommand(controlled(), CONTENT, 'nobody', { type: 'end-turn' })).not.toThrow();

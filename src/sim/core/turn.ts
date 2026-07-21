@@ -14,6 +14,7 @@
 
 import type { ArmyOrder, GameState, GameContent, LairState } from './state';
 import type { BuildOrder, CityState, PlaneId, UnitState, YieldBundle } from '../types';
+import { magicTierCap } from '../types';
 import {
   computeCityYields,
   tickProduction,
@@ -212,10 +213,21 @@ export function applyCommand(
       // (player.setup.schools). Prereqs (below) are validated the same way for
       // both — a school study's chain lives within its own school tree.
       const isRaceStudy = race.studies.includes(cmd.studyId);
-      const isSchoolStudy =
-        study.school !== undefined && (player.setup.schools ?? []).includes(study.school);
+      const schools = player.setup.schools ?? [];
+      const isSchoolStudy = study.school !== undefined && schools.includes(study.school);
       if (!isRaceStudy && !isSchoolStudy) {
         throw new Error(`${race.name} cannot research '${study.name}'`);
+      }
+      // Magic tiers gate by school focus: pure mages reach tier 3, dual-school
+      // wizards tier 2, triple-school wizards tier 1 (see magicTierCap).
+      if (isSchoolStudy && study.tier !== undefined) {
+        const cap = magicTierCap(schools.length);
+        if (study.tier > cap) {
+          throw new Error(
+            `'${study.name}' is a tier ${study.tier} mystery — a wizard of ` +
+              `${schools.length} schools may only reach tier ${cap}`,
+          );
+        }
       }
       if (player.completedStudies.includes(cmd.studyId)) {
         throw new Error(`'${study.name}' is already researched`);
