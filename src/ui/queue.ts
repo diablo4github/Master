@@ -31,6 +31,13 @@ export interface QueueItemView {
   progress: number;
   isHead: boolean;
   /**
+   * How many copies of THIS order's id sit in the whole queue. >1 means the
+   * player queued the same unit several times (units may be duplicated); the
+   * panel shows a "×N" marker so a batch reads at a glance. Buildings are always
+   * 1 (the sim rejects a second copy).
+   */
+  dupCount: number;
+  /**
    * Turns until THIS item finishes, accounting for every item ahead of it and
    * the head's progress. null when it can never finish at the current rate
    * (production ≤ 0) — the panel shows "∞".
@@ -70,6 +77,8 @@ export function queueView(
   production: number,
 ): QueueItemView[] {
   const headProgress = city.buildQueue[0]?.progress ?? 0;
+  const idCounts = new Map<string, number>();
+  for (const o of city.buildQueue) idCounts.set(o.id, (idCounts.get(o.id) ?? 0) + 1);
   let cumCost = 0;
   return city.buildQueue.map((order, index) => {
     cumCost += orderCost(content, order);
@@ -82,33 +91,51 @@ export function queueView(
       cost: orderCost(content, order),
       progress: order.progress,
       isHead: index === 0,
+      dupCount: idCounts.get(order.id) ?? 1,
       etaTurns: queueEtaTurns(remaining, production),
     };
   });
 }
 
 export interface QueueBuildOption extends BuildOption {
-  /** Already sitting in this city's queue (can't be queued twice). */
+  /** Already sitting in this city's queue. For buildings this disables the
+   * option (a building is a one-off); units ignore it — duplicates are legal. */
   queued: boolean;
+  /** For units: how many copies are already queued (shown as a ×N hint). */
+  queuedCount: number;
+}
+
+/** The picker split into its two visible shelves. */
+export interface QueueOptionSections {
+  buildings: QueueBuildOption[];
+  units: QueueBuildOption[];
 }
 
 /**
- * Options for the "Add to queue" picker. Buildings the race can eventually
- * build and mundane units it can train, each annotated with buildability where
- * a building whose prerequisite is queued EARLIER counts as satisfied. Orders
- * already in the queue are flagged `queued` (and marked unbuildable) so the UI
- * can disable them; already-built buildings are excluded by the sim's own
- * reason string as before.
+ * Options for the "Add to queue" picker, split into a **Buildings** shelf and a
+ * **Units** shelf so the panel can header them separately.
+ *
+ * Buildings: every building the race can eventually build EXCEPT ones already
+ * built (those are hidden entirely, never greyed). A building whose prerequisite
+ * is queued earlier counts as available; one already queued is flagged `queued`
+ * and marked unbuildable (a building is a one-off, no double-queue).
+ *
+ * Units: mundane trainable units only — summons, wild monsters, and school
+ * (summon) origins are filtered OUT entirely (the sim rejects them, so we never
+ * show a permanently-locked row). Units may be queued repeatedly, so a
+ * queued-already unit stays buildable and carries `queuedCount` for a ×N hint.
  */
 export function assembleQueueOptions(
   state: GameState,
   content: GameContent,
   city: CityState,
-): QueueBuildOption[] {
+): QueueOptionSections {
   const race = content.races[city.raceId];
-  if (!race) return [];
+  if (!race) return { buildings: [], units: [] };
 
   const queuedIds = new Set(city.buildQueue.map((o) => o.id));
+  const queuedCounts = new Map<string, number>();
+  for (const o of city.buildQueue) queuedCounts.set(o.id, (queuedCounts.get(o.id) ?? 0) + 1);
   const availableBuildings = [
     ...city.buildings,
     ...city.buildQueue.filter((o) => o.kind === 'building').map((o) => o.id),
@@ -118,6 +145,8 @@ export function assembleQueueOptions(
   for (const id of race.buildings) {
     const def = content.buildings[id];
     if (!def) continue;
+    // Already-built buildings are HIDDEN, not greyed.
+    if (city.buildings.includes(id)) continue;
     const queued = queuedIds.has(id);
     const reason = queued
       ? 'Already queued'
@@ -131,6 +160,7 @@ export function assembleQueueOptions(
       buildable: !queued && reason === null,
       reason,
       queued,
+      queuedCount: queued ? 1 : 0,
     });
   }
   buildings.sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
@@ -139,24 +169,28 @@ export function assembleQueueOptions(
   for (const id of Object.keys(content.units)) {
     const def = content.units[id];
     if (!def) continue;
-    if (def.role === 'summon' || 'school' in def.origin) continue;
+    // Summons/monsters are conjured, never trained — omit them so the list
+    // shows only what a city can actually produce.
+    if (def.role === 'summon' || def.role === 'monster' || 'school' in def.origin) continue;
     const trainableByRace =
       'generic' in def.origin || ('race' in def.origin && def.origin.race === city.raceId);
     if (!trainableByRace) continue;
-    const queued = queuedIds.has(id);
-    const reason = queued ? 'Already queued' : buildBlockReason(state, content, city, 'unit', id);
+    // Units may be duplicated: legality doesn't depend on being queued already.
+    const reason = buildBlockReason(state, content, city, 'unit', id);
+    const count = queuedCounts.get(id) ?? 0;
     units.push({
       kind: 'unit',
       id,
       name: def.name,
       cost: def.cost ?? 0,
       tier: 0,
-      buildable: !queued && reason === null,
+      buildable: reason === null,
       reason,
-      queued,
+      queued: count > 0,
+      queuedCount: count,
     });
   }
   units.sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
 
-  return [...buildings, ...units];
+  return { buildings, units };
 }

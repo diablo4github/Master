@@ -5,19 +5,35 @@
  * routes through the store (which owns all sim mutation).
  */
 
-import { computeCityYields, cityPopulationCap, pickCityName, QUEUE_CAP } from '@sim/city/city';
-import type { CityState, UnitState, UnitDef } from '@sim/types';
+import {
+  computeCityYields,
+  cityPopulationCap,
+  cityFoodPotentialCap,
+  pickCityName,
+  QUEUE_CAP,
+} from '@sim/city/city';
+import type { CityState, UnitState, UnitDef, SchoolDef, SchoolId, StudyDef } from '@sim/types';
 
+import { SCHOOLS as SCHOOLS_RAW } from '@data/schools';
 import type { Store } from './store';
-import { el } from './dom';
+import { el, chip } from './dom';
 import { empireSummary } from './econ';
 import { summarizeStudy } from './summarize';
 import { describeAbility } from './abilities';
 import type { LairState, BattleRecord } from './battleTypes';
 import { sideComposition, sideThreat, battleStart } from './battleSummary';
 import { endTurnDecision, endTurnLabel } from './endTurn';
-import { queueView, assembleQueueOptions } from './queue';
-import { stackRows, armyView, canFormArmy, type UnitRow } from './army';
+import { queueView, assembleQueueOptions, type QueueBuildOption } from './queue';
+import {
+  stackRows,
+  armyView,
+  armyOrderSummary,
+  armiesPresent,
+  canFormArmy,
+  type UnitRow,
+} from './army';
+
+const SCHOOLS = SCHOOLS_RAW as Record<SchoolId, SchoolDef>;
 
 function bar(fraction: number, color: string): HTMLElement {
   const pct = Math.max(0, Math.min(100, Math.round(fraction * 100)));
@@ -77,7 +93,14 @@ function topBar(store: Store): HTMLElement {
   // BEFORE the click; a modifier (shift-click) or the tiny secondary button
   // force the turn to advance regardless.
   const selectedCityId = st.selected?.kind === 'city' ? st.selected.id : null;
-  const decision = endTurnDecision(game, store.content, st.humanPlayerId, selectedCityId);
+  const selectedArmyId = st.selected?.kind === 'army' ? st.selected.id : null;
+  const decision = endTurnDecision(
+    game,
+    store.content,
+    st.humanPlayerId,
+    selectedCityId,
+    selectedArmyId,
+  );
   const decisionCity =
     decision.kind === 'production' ? game.cities.find((c) => c.id === decision.cityId) : undefined;
   const endLabel = endTurnLabel(decision, decisionCity?.name);
@@ -91,6 +114,9 @@ function topBar(store: Store): HTMLElement {
       case 'production':
         store.openProduction(decision.cityId);
         if (decisionCity) store.requestCenter(decisionCity.x, decisionCity.y);
+        break;
+      case 'army':
+        store.openArmyOrders(decision.armyId);
         break;
       case 'advance':
         advance();
@@ -164,6 +190,11 @@ function cityPanel(store: Store, city: CityState): HTMLElement {
   const race = content.races[city.raceId];
   const yields = computeCityYields(game, content, city);
   const cap = cityPopulationCap(game, content, city);
+  const foodCap = cityFoodPotentialCap(game, content, city);
+  // Food is the binding constraint when the food-potential cap is what the
+  // overall cap collapsed to (housing is looser). Surface it so the player
+  // understands WHY the town stops growing — terrain, not buildings.
+  const foodBound = foodCap <= cap;
 
   const yieldRow = el('div', { class: 'yield-grid' }, [
     yieldCell('Food', yields.food, '#7fc96b'),
@@ -182,8 +213,11 @@ function cityPanel(store: Store, city: CityState): HTMLElement {
 
   return panelShell(store, `${city.name}`, `${race?.name ?? city.raceId} city`, [
     el('div', { class: 'panel-line' }, [
-      el('span', { text: `Population ${city.population}/${cap}` }),
+      el('span', { text: `Population ${city.population} / ${cap}` }),
     ]),
+    foodBound
+      ? el('p', { class: 'note food-note', text: `Food-limited — the land here can feed ${foodCap}.` })
+      : null,
     el('h4', { class: 'panel-h', text: 'Per-turn yields' }),
     yieldRow,
     el('h4', { class: 'panel-h', text: 'Buildings' }),
@@ -216,6 +250,10 @@ function productionQueue(store: Store, city: CityState, production: number): HTM
         const meta = el('div', { class: 'q-item-meta' }, [
           el('span', { class: 'q-item-icon', text: r.kind === 'unit' ? '⚔' : '⌂' }),
           el('span', { class: 'q-item-name', text: r.name }),
+          // ×N marker when the same unit is queued multiple times.
+          r.kind === 'unit' && r.dupCount > 1
+            ? el('span', { class: 'q-item-mult', text: `×${r.dupCount}` })
+            : null,
           el('span', { class: 'q-item-eta', text: etaText(r.etaTurns) }),
         ]);
         const ctrl = el('div', { class: 'q-item-ctrl' }, [
@@ -238,16 +276,21 @@ function productionQueue(store: Store, city: CityState, production: number): HTM
       })
     : [el('p', { class: 'dim', text: 'Queue empty — add production below.' })];
 
-  // Add-to-queue picker.
-  const options = assembleQueueOptions(game, content, city);
-  const optionEls = options.map((o) => {
+  // Add-to-queue picker, split into a Buildings shelf and a Units shelf.
+  const { buildings, units } = assembleQueueOptions(game, content, city);
+
+  const optionBtn = (o: QueueBuildOption): HTMLElement => {
+    // A unit already queued still shows its running count but stays enabled
+    // (duplicates are legal); a locked/queued building is disabled.
+    const countTag =
+      o.kind === 'unit' && o.queuedCount > 0 ? ` ×${o.queuedCount}` : '';
     const btn = el('button', {
-      class: `build-opt${o.buildable ? '' : ' locked'}${o.queued ? ' queued' : ''}`,
+      class: `build-opt${o.buildable ? '' : ' locked'}${o.queued && o.kind === 'building' ? ' queued' : ''}`,
       type: 'button',
       title: o.reason ?? `${o.name} — ${o.cost} production`,
     }, [
       el('span', { class: 'opt-name', text: o.name }),
-      el('span', { class: 'opt-meta', text: `${o.kind === 'unit' ? '⚔ ' : '⌂ '}${o.cost}` }),
+      el('span', { class: 'opt-meta', text: `${o.kind === 'unit' ? '⚔ ' : '⌂ '}${o.cost}${countTag}` }),
     ]);
     if (o.buildable && !full) {
       btn.addEventListener('click', () => {
@@ -257,9 +300,17 @@ function productionQueue(store: Store, city: CityState, production: number): HTM
       btn.disabled = true;
     }
     return btn;
-  });
+  };
 
   const highlight = store.getState().highlightAddPicker;
+  const section = (title: string, opts: QueueBuildOption[]): (Node | null)[] =>
+    opts.length
+      ? [
+          el('h5', { class: 'build-section-h', text: title }),
+          el('div', { class: `build-opts${highlight ? ' pulse' : ''}` }, opts.map(optionBtn)),
+        ]
+      : [];
+
   return el('div', { class: 'q-block' }, [
     el('div', { class: 'panel-h q-head-row' }, [
       el('span', { text: 'Production Queue' }),
@@ -267,7 +318,14 @@ function productionQueue(store: Store, city: CityState, production: number): HTM
     ]),
     el('div', { class: 'q-list' }, queueEls),
     el('h4', { class: `panel-h${highlight ? ' pulse' : ''}`, text: full ? 'Queue full' : 'Add to queue' }),
-    el('div', { class: `build-opts${highlight ? ' pulse' : ''}` }, optionEls),
+    ...(full
+      ? []
+      : [
+          el('div', { class: 'build-sections' }, [
+            ...section('Buildings', buildings),
+            ...section('Units', units),
+          ]),
+        ]),
   ]);
 }
 
@@ -355,7 +413,7 @@ function unitPanel(store: Store, unit: UnitState): HTMLElement {
   }
   if (def?.description) body.push(el('p', { class: 'desc', text: def.description }));
 
-  return panelShell(store, def?.name ?? unit.defId, `${def?.role ?? 'unit'}`, body);
+  return panelShell(store, unit.name ?? def?.name ?? unit.defId, `${def?.role ?? 'unit'}`, body);
 }
 
 /**
@@ -532,11 +590,54 @@ function stackPanel(store: Store, plane: CityState['plane'], x: number, y: numbe
     formBtn.disabled = true;
   }
 
+  const actionEls: (Node | null)[] = [formBtn];
+
+  // One-click consolidation: merge the WHOLE tile into a single army.
+  if (rows.length >= 2) {
+    const mergeBtn = el('button', { class: 'action-btn', type: 'button', text: 'Merge all into one army' });
+    mergeBtn.addEventListener('click', () => {
+      const ok = store.command({ type: 'merge-stack', plane, x, y });
+      if (ok) store.select({ kind: 'stack', plane, x, y });
+    });
+    actionEls.push(mergeBtn);
+  }
+
+  // Transfer: for each army already present, offer to fold the ticked units into
+  // it (the sim auto-leaves any old army). Enabled once units are ticked that
+  // aren't already in that army.
+  const present = armiesPresent(rows);
+  const joinEls: (Node | null)[] = present.map((a) => {
+    const joiners = [...checked].filter((id) => {
+      const r = rows.find((row) => row.id === id);
+      return r && r.armyId !== a.armyId;
+    });
+    const btn = el('button', {
+      class: 'action-btn',
+      type: 'button',
+      text: `Join ${a.label}${joiners.length ? ` (${joiners.length})` : ''}`,
+      title: `Fold the ticked units into ${a.label}'s army (${a.size} strong)`,
+    });
+    if (joiners.length > 0) {
+      btn.addEventListener('click', () => {
+        const ok = store.command({ type: 'join-army', armyId: a.armyId, unitIds: joiners });
+        if (ok) {
+          store.setStackChecked([]);
+          store.select({ kind: 'stack', plane, x, y });
+        }
+      });
+    } else {
+      btn.disabled = true;
+    }
+    return btn;
+  });
+
   return panelShell(store, 'Stack', `(${x}, ${y}) · ${rows.length} units`, [
-    el('p', { class: 'note', text: 'Tick units and Form army, or click a name to inspect one.' }),
+    el('p', { class: 'note', text: 'Tick units to form or join an army, or click a name to inspect one.' }),
     selectAll,
     el('div', { class: 'stack-list' }, rowEls),
-    el('div', { class: 'panel-actions' }, [formBtn]),
+    el('div', { class: 'panel-actions' }, actionEls),
+    present.length ? el('h4', { class: 'panel-h', text: 'Join an existing army' }) : null,
+    present.length ? el('div', { class: 'panel-actions' }, joinEls) : null,
   ]);
 }
 
@@ -558,13 +659,31 @@ function armyPanel(store: Store, armyId: string): HTMLElement {
     store.toast('Click a destination tile — the whole army marches.', 'info');
   });
 
+  const fortifyBtn = el('button', { class: 'action-btn', type: 'button', text: 'Fortify' });
+  fortifyBtn.addEventListener('click', () => {
+    const ok = store.command({ type: 'fortify-army', armyId });
+    if (ok) store.toast('The army digs in.', 'info');
+  });
+
   const rowEls = view.members.map((r) => unitRowEl(store, r, { leave: true }));
+
+  // The persisted standing order — armies keep marching / stay dug in across
+  // turns without re-issuing, so the panel states plainly what it will do next.
+  const order = armyOrderSummary(game, store.content, armyId);
+  const orderChip = el('div', { class: `army-order ${order.kind}` }, [
+    el('span', { class: 'army-order-icon', text: order.kind === 'move' ? '➤' : order.kind === 'fortify' ? '⛨' : '…' }),
+    el('span', { class: 'army-order-text', text: order.text }),
+  ]);
 
   const body: (Node | null)[] = [
     el('div', { class: 'panel-line' }, [
       el('span', { text: `${view.members.length} units · pace ${view.pace} · ${view.totalFigures} figures` }),
     ]),
-    el('div', { class: 'panel-actions' }, [moveBtn]),
+    orderChip,
+    order.kind === 'move'
+      ? el('p', { class: 'note', text: 'Standing order — the army continues next turn without re-issuing.' })
+      : null,
+    el('div', { class: 'panel-actions' }, [moveBtn, fortifyBtn]),
     el('h4', { class: 'panel-h', text: 'Members' }),
     el('div', { class: 'stack-list' }, rowEls),
   ];
@@ -650,55 +769,102 @@ function panelShellLair(store: Store, title: string, sub: string, body: (Node | 
 
 // --- Research panel --------------------------------------------------------
 
+/** One study row, shared by the Race and Magic research tabs. */
+function studyRowEl(
+  store: Store,
+  def: StudyDef,
+  ctx: { completed: readonly string[]; activeId: string | null; progress: number },
+): HTMLElement {
+  const content = store.content;
+  const { completed, activeId, progress } = ctx;
+  const isDone = completed.includes(def.id);
+  const isActive = activeId === def.id;
+  const missingReq = (def.requires ?? []).filter((r) => !completed.includes(r));
+  const locked = missingReq.length > 0;
+
+  const status = isDone ? '✓' : isActive ? '◆' : locked ? '🔒' : '○';
+  const cls = isDone ? 'done' : isActive ? 'active' : locked ? 'locked' : 'available';
+
+  const row = el('button', { class: `study-row ${cls}`, type: 'button' }, [
+    el('div', { class: 'study-head' }, [
+      el('span', { class: 'study-status', text: status }),
+      el('span', { class: 'study-name', text: def.name }),
+      el('span', { class: 'study-cost', text: `${def.cost} rp` }),
+    ]),
+    el('div', { class: 'study-effect', text: summarizeStudy(def) }),
+    isActive ? bar(def.cost > 0 ? progress / def.cost : 0, '#8fb4ff') : null,
+    locked
+      ? el('div', { class: 'study-req', text: `Requires: ${missingReq.map((r) => content.studies[r]?.name ?? r).join(', ')}` })
+      : null,
+  ]);
+
+  if (!isDone && !locked) {
+    row.addEventListener('click', () => {
+      if (isActive) return;
+      const switching = activeId && activeId !== def.id && progress > 0;
+      if (switching && !window.confirm('Switching research discards progress on the current study. Continue?')) {
+        return;
+      }
+      store.command({ type: 'set-research', studyId: def.id });
+    });
+  } else {
+    row.disabled = true;
+  }
+  return row;
+}
+
 function researchPanel(store: Store): HTMLElement {
   const st = store.getState();
   const game = st.game!;
   const content = store.content;
   const player = game.players.find((p) => p.id === st.humanPlayerId);
   const race = player ? content.races[player.setup.raceId] : undefined;
+  const schools = player?.setup.schools ?? [];
   const completed = player?.completedStudies ?? [];
   const activeId = player?.research.activeStudyId ?? null;
+  const progress = player?.research.progress ?? 0;
+  const ctx = { completed, activeId, progress };
+  const tab = st.researchTab;
 
-  const rows = (race?.studies ?? []).map((sid) => {
-    const def = content.studies[sid];
-    if (!def) return el('div');
-    const isDone = completed.includes(sid);
-    const isActive = activeId === sid;
-    const missingReq = (def.requires ?? []).filter((r) => !completed.includes(r));
-    const locked = missingReq.length > 0;
+  // --- Tab buttons (Magic hidden when the wizard knows no schools) ----------
+  const tabBtns: HTMLElement[] = [];
+  const mkTab = (id: 'race' | 'magic', label: string) => {
+    const b = el('button', { class: `research-tab${tab === id ? ' selected' : ''}`, type: 'button', text: label });
+    b.addEventListener('click', () => store.setResearchTab(id));
+    tabBtns.push(b);
+  };
+  mkTab('race', race?.name ?? 'Race');
+  if (schools.length > 0) mkTab('magic', 'Magic');
 
-    const status = isDone ? '✓' : isActive ? '◆' : locked ? '🔒' : '○';
-    const cls = isDone ? 'done' : isActive ? 'active' : locked ? 'locked' : 'available';
-
-    const row = el('button', { class: `study-row ${cls}`, type: 'button' }, [
-      el('div', { class: 'study-head' }, [
-        el('span', { class: 'study-status', text: status }),
-        el('span', { class: 'study-name', text: def.name }),
-        el('span', { class: 'study-cost', text: `${def.cost} rp` }),
-      ]),
-      el('div', { class: 'study-effect', text: summarizeStudy(def) }),
-      isActive && player
-        ? bar(def.cost > 0 ? player.research.progress / def.cost : 0, '#8fb4ff')
-        : null,
-      locked
-        ? el('div', { class: 'study-req', text: `Requires: ${missingReq.map((r) => content.studies[r]?.name ?? r).join(', ')}` })
-        : null,
-    ]);
-
-    if (!isDone && !locked) {
-      row.addEventListener('click', () => {
-        if (isActive) return;
-        const switching = activeId && activeId !== sid && (player?.research.progress ?? 0) > 0;
-        if (switching && !window.confirm('Switching research discards progress on the current study. Continue?')) {
-          return;
-        }
-        store.command({ type: 'set-research', studyId: sid });
-      });
-    } else {
-      row.disabled = true;
+  let body: HTMLElement;
+  if (tab === 'magic' && schools.length > 0) {
+    // One group per school the wizard knows (color chip + name), each listing
+    // that school's magic-shelf chain (studies flagged with `.school`), ordered
+    // by cost. A pure mage sees a single deep tree.
+    const groups: (Node | null)[] = [];
+    for (const sid of schools) {
+      const school = SCHOOLS[sid];
+      const studies = Object.values(content.studies)
+        .filter((s): s is StudyDef => !!s && s.school === sid)
+        .sort((a, b) => a.cost - b.cost);
+      groups.push(
+        el('div', { class: 'study-group' }, [
+          el('div', { class: 'study-group-head' }, [
+            school ? chip(school.color, school.name) : null,
+            el('span', { class: 'study-group-name', text: `${school?.name ?? sid} magic` }),
+          ]),
+          el('div', { class: 'study-list' }, studies.map((d) => studyRowEl(store, d, ctx))),
+        ]),
+      );
     }
-    return row;
-  });
+    body = el('div', { class: 'research-body' }, groups);
+  } else {
+    const rows = (race?.studies ?? [])
+      .map((sid) => content.studies[sid])
+      .filter((d): d is StudyDef => !!d)
+      .map((d) => studyRowEl(store, d, ctx));
+    body = el('div', { class: 'study-list' }, rows);
+  }
 
   const close = el('button', { class: 'panel-close', type: 'button', text: '✕' });
   close.addEventListener('click', () => store.toggleResearch(false));
@@ -707,11 +873,12 @@ function researchPanel(store: Store): HTMLElement {
     el('div', { class: 'panel-title-row' }, [
       el('div', { class: 'panel-titles' }, [
         el('h2', { class: 'panel-title', text: 'Magical Studies' }),
-        el('span', { class: 'panel-sub', text: race?.name ?? '' }),
+        el('span', { class: 'panel-sub', text: tab === 'magic' ? 'wizard schools' : race?.name ?? '' }),
       ]),
       close,
     ]),
-    el('div', { class: 'study-list' }, rows),
+    el('div', { class: 'research-tabs' }, tabBtns),
+    body,
   ]);
 }
 

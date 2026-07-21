@@ -436,6 +436,19 @@ button {
   50% { outline-color: rgba(242,213,143,0.25); }
 }
 
+/* Add-to-queue split shelves (Buildings / Units). */
+.build-sections { display: flex; flex-direction: column; gap: 8px; }
+.build-section-h {
+  margin: 4px 0 2px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--gold-deep);
+}
+/* ×N marker on a unit queued multiple times. */
+.q-item-mult {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: #1a1205;
+  background: var(--gold); border-radius: 2px; padding: 0 4px;
+}
+.food-note { border-left-color: #7fc96b; color: #a9d68f; }
+
 /* --- Stack / army panels ------------------------------------------------- */
 
 .stack-all { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-dim); }
@@ -464,6 +477,20 @@ button {
 }
 .stack-leave:hover { border-color: #d6553f; color: #d6553f; }
 
+/* Army standing-order chip. */
+.army-order {
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--gold-dark); border-radius: 3px;
+  padding: 6px 9px; font-size: 12.5px; color: var(--ink);
+  background: rgba(0,0,0,0.22);
+}
+.army-order-icon { font-size: 13px; }
+.army-order.move { border-left: 3px solid #8fb4ff; }
+.army-order.move .army-order-icon { color: #8fb4ff; }
+.army-order.fortify { border-left: 3px solid #7fc96b; }
+.army-order.fortify .army-order-icon { color: #7fc96b; }
+.army-order.idle { border-left: 3px solid var(--gold-deep); color: var(--ink-dim); }
+
 /* --- Unit panel ---------------------------------------------------------- */
 
 .unit-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -490,6 +517,26 @@ button {
 /* --- Research panel ------------------------------------------------------ */
 
 .side-panel.research { width: 360px; }
+.research-tabs { display: flex; gap: 4px; padding: 8px 14px 0; }
+.research-tab {
+  flex: 1; background: var(--panel-3); border: 1px solid var(--gold-dark);
+  color: var(--ink-dim); border-radius: 3px 3px 0 0; padding: 7px 8px;
+  font-size: 12.5px; font-family: var(--serif);
+}
+.research-tab:hover { border-color: var(--gold-deep); color: var(--ink); }
+.research-tab.selected {
+  color: var(--gold); border-color: var(--gold-deep);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  font-weight: 700;
+}
+.research-body { overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.study-group { display: flex; flex-direction: column; gap: 8px; }
+.study-group-head { display: flex; align-items: center; gap: 8px; }
+.study-group-name {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--gold);
+}
+.study-group .study-list { padding: 0; overflow: visible; }
 .study-row {
   text-align: left;
   background: var(--panel-3);
@@ -726,6 +773,15 @@ button {
 }
 .bv-ctl:hover { border-color: var(--gold); color: var(--gold); }
 .bv-play { min-width: 52px; font-size: 15px; }
+/* Gentle invitation pulse while the replay waits, paused, at the opening frame. */
+.bv-play.pulse {
+  border-color: var(--gold); color: var(--gold);
+  animation: bv-play-pulse 1.3s ease-in-out infinite;
+}
+@keyframes bv-play-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242,213,143,0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(242,213,143,0); }
+}
 .bv-speed.active { background: #3a2e1a; border-color: var(--gold); color: var(--gold); }
 .bv-scrub { flex: 1; accent-color: var(--gold); height: 6px; }
 .bv-tick-label { font-family: var(--mono); font-size: 13px; color: var(--gold); min-width: 74px; text-align: right; }

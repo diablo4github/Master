@@ -122,16 +122,98 @@ async function main(): Promise<void> {
     const panelTitle = await page.locator('.side-panel .panel-title').first().textContent();
     console.log(`smoke: side panel title = "${panelTitle ?? ''}"`);
 
-    // Queue granary → marketplace → militia in this one visit.
-    console.log('smoke: queuing granary + marketplace + militia…');
-    for (const name of ['Granary', 'Marketplace', 'Militia']) {
+    // The Add-to-queue picker is split into Buildings and Units shelves.
+    const sectionHeaders = await page.locator('.build-section-h').allTextContents();
+    console.log(`smoke: build sections = ${JSON.stringify(sectionHeaders.map((s) => s.trim()))}`);
+    if (!sectionHeaders.some((s) => /Buildings/i.test(s)) || !sectionHeaders.some((s) => /Units/i.test(s))) {
+      throw new Error('expected Buildings and Units sections in the Add-to-queue picker');
+    }
+
+    // Queue granary → marketplace → militia ×2 in this one visit (two militia
+    // exercises the ×N duplicate marker; buildings + units span both shelves).
+    console.log('smoke: queuing granary + marketplace + militia ×2…');
+    for (const name of ['Granary', 'Marketplace', 'Militia', 'Militia']) {
       await page.locator('.build-opts .build-opt:not(:disabled)', { hasText: name }).first().click();
       await sleep(200);
     }
     await page.waitForSelector('.q-item', { timeout: 8_000 });
     const queued = await page.locator('.q-item').count();
-    console.log(`smoke: queue length = ${queued}`);
+    const hasMult = (await page.locator('.q-item-mult').count()) > 0;
+    console.log(`smoke: queue length = ${queued}, ×N marker present = ${hasMult}`);
+    if (!hasMult) throw new Error('expected a ×N marker on the duplicated militia order');
     await page.screenshot({ path: `${OUT}/smoke-8-queue.png` });
+
+    // --- Research tabs (Race | Magic) -------------------------------------
+    console.log('smoke: opening research → Magic tab…');
+    await page.keyboard.press('r'); // toggle research overlay open
+    await page.waitForSelector('.side-panel.research .research-tabs', { timeout: 8_000 });
+    const tabLabels = await page.locator('.research-tab').allTextContents();
+    console.log(`smoke: research tabs = ${JSON.stringify(tabLabels.map((s) => s.trim()))}`);
+    await page.locator('.research-tab', { hasText: 'Magic' }).click();
+    await page.waitForSelector('.study-group-head .chip', { timeout: 8_000 });
+    await sleep(250);
+    await page.screenshot({ path: `${OUT}/smoke-10-research.png` });
+    await page.keyboard.press('r'); // close research overlay
+
+    // --- Army panel with a persistent move order --------------------------
+    // Drive the sim through the exposed store: move the settler onto the
+    // capital tile, merge the two co-located units into an army, order it to a
+    // far tile (a partial march keeps the standing order), then select it so
+    // the panel shows "Moving to (x, y)".
+    console.log('smoke: forming an army and giving it a standing move order…');
+    const armyOk = await page.evaluate(`
+      (() => {
+        const s = window.__master.store;
+        const human = s.getState().humanPlayerId;
+        const g = s.getState().game;
+        const cap = g.cities.find((c) => c.owner === human);
+        if (!cap) return false;
+        const settler = g.units.find((u) => u.owner === human && u.defId === 'settler');
+        if (settler) s.command({ type: 'move-unit', unitId: settler.id, to: { x: cap.x, y: cap.y } });
+        const g2 = s.getState().game;
+        const onCap = g2.units.filter(
+          (u) => u.owner === human && u.plane === cap.plane && u.x === cap.x && u.y === cap.y,
+        );
+        if (onCap.length < 2) return false;
+        s.command({ type: 'form-army', unitIds: onCap.map((u) => u.id) });
+        const g3 = s.getState().game;
+        const member = g3.units.find((u) => onCap.some((o) => o.id === u.id) && u.armyId);
+        const armyId = member && member.armyId;
+        if (!armyId) return false;
+        // Find a passable land tile a few tiles away so the march is partial
+        // (the standing order then persists across turns). Passable ≈ not
+        // ocean/shore and not a peak.
+        const map = g3.maps[cap.plane];
+        const passable = (x, y) => {
+          if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
+          const t = map.tiles[y * map.width + x];
+          return !!t && t.elevation !== 3 && t.terrain !== 'ocean' && t.terrain !== 'shore';
+        };
+        const candidates = [];
+        for (let d = 6; d >= 3; d--) {
+          for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d], [d, d], [-d, -d], [d, -d], [-d, d]]) {
+            if (passable(cap.x + dx, cap.y + dy)) candidates.push({ x: cap.x + dx, y: cap.y + dy });
+          }
+        }
+        // Issue the order to the first target the sim accepts (a reachable path,
+        // partial this turn) so the standing "Moving to" order sticks.
+        let ordered = false;
+        for (const target of candidates) {
+          if (s.command({ type: 'move-army', armyId, to: target })) { ordered = true; break; }
+        }
+        if (!ordered) return false;
+        s.select({ kind: 'army', id: armyId });
+        return true;
+      })()
+    `);
+    console.log(`smoke: army setup ok = ${armyOk}`);
+    await page.waitForSelector('.army-order.move', { timeout: 8_000 });
+    const orderText = (await page.locator('.army-order-text').first().textContent())?.trim() ?? '';
+    console.log(`smoke: army order = "${orderText}"`);
+    await sleep(250);
+    await page.screenshot({ path: `${OUT}/smoke-11-army.png` });
+    // Return the map to a clean selection for the battle flow.
+    await page.evaluate('window.__master.store.select(null)');
 
     console.log('smoke: advancing a few turns (End anyway when a decision pends)…');
     for (let i = 0; i < 3; i++) {
@@ -170,10 +252,21 @@ async function main(): Promise<void> {
     console.log('smoke: watching the battle…');
     await page.locator('#battle-watch').click();
     await page.waitForSelector('.battle-viewer', { timeout: 8_000 });
-    // Pause at the opening frame first (before playback advances and the end
-    // card can appear over the controls), then exercise the 4× speed control
-    // and seek to a middle tick for a clean mid-battle frame.
-    await page.locator('.bv-play').click(); // pause (open() starts it playing)
+
+    // The replay starts PAUSED at tick 0 with the play button pulsing. Assert
+    // the clock does NOT advance on its own before the player presses play.
+    await page.waitForSelector('.bv-play.pulse', { timeout: 4_000 });
+    const tickBefore = (await page.locator('.bv-tick-label').textContent())?.trim() ?? '';
+    await sleep(800);
+    const tickAfter = (await page.locator('.bv-tick-label').textContent())?.trim() ?? '';
+    console.log(`smoke: paused clock "${tickBefore}" → "${tickAfter}"`);
+    if (!/^0\s*\//.test(tickBefore) || tickBefore !== tickAfter) {
+      throw new Error(`battle should start paused at tick 0 (saw "${tickBefore}" then "${tickAfter}")`);
+    }
+
+    // Still PAUSED: exercise the 4× speed control and scrub (via input events,
+    // which keep playback paused) to a middle tick — a clean, static mid-battle
+    // frame with tokens on the field, taken BEFORE any play/end-card overlay.
     await page.locator('.bv-speed', { hasText: '4×' }).click();
     await page.evaluate(`
       (() => {
@@ -185,8 +278,19 @@ async function main(): Promise<void> {
         }
       })()
     `);
-    await sleep(400);
+    await sleep(300);
+    const tickMid = (await page.locator('.bv-tick-label').textContent())?.trim() ?? '';
     await page.screenshot({ path: `${OUT}/smoke-6-battle-mid.png` });
+
+    // Now press play (from the mid frame, so the button is not under the end
+    // card) to prove the replay advances only once the player starts it.
+    await page.locator('.bv-play').click();
+    await sleep(300);
+    const tickPlaying = (await page.locator('.bv-tick-label').textContent())?.trim() ?? '';
+    console.log(`smoke: clock mid "${tickMid}" → after play "${tickPlaying}"`);
+    if (tickPlaying === tickMid) {
+      throw new Error(`clock should advance after play (stuck at "${tickPlaying}")`);
+    }
 
     // Seek to the final tick so the end card resolves (no covered controls).
     await page.evaluate(`

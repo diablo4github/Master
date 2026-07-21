@@ -55,7 +55,7 @@ export interface UnitResult {
   survived: boolean;
 }
 
-export function unitResults(report: BattleReport): UnitResult[] {
+export function unitResults(report: BattleReport, names?: Map<string, string>): UnitResult[] {
   const start = battleStart(report);
   if (!start) return [];
   const survHp = new Map<string, number>();
@@ -68,7 +68,7 @@ export function unitResults(report: BattleReport): UnitResult[] {
     const endFigures = survived ? Math.max(1, Math.ceil(hp / Math.max(1, u.hits))) : 0;
     return {
       id: u.id,
-      name: u.name,
+      name: names?.get(u.id) ?? u.name,
       side: u.side,
       startFigures: u.figures,
       endFigures,
@@ -128,8 +128,8 @@ function titleCase(s: string): string {
  * Spiders — 4 figures lost"), and calls out morale breaks, rallies, abilities,
  * and deaths — this is where the "why" of the battle lives.
  */
-export function buildFeed(report: BattleReport): FeedLine[] {
-  const names = unitNameMap(report);
+export function buildFeed(report: BattleReport, nameOverride?: Map<string, string>): FeedLine[] {
+  const names = nameOverride ?? unitNameMap(report);
   const sides = unitSideMap(report);
   const start = battleStart(report);
   const lines: FeedLine[] = [];

@@ -13,8 +13,9 @@ import { Application } from 'pixi.js';
 
 import { CONTENT } from '@data/content';
 import { loadSprites } from '@render/sprites';
-import { MapView } from '@render/mapView';
+import { MapView, type WorkedOverlay } from '@render/mapView';
 import { resolveStacks, type StackUnit } from '@sim/combat/resolve';
+import { catchmentTiles, workedTiles } from '@sim/city/city';
 import type { UnitState, PlaneId } from '@sim/types';
 import { Store } from '@ui/store';
 import { mountNewGame } from '@ui/newGame';
@@ -132,7 +133,28 @@ async function main(): Promise<void> {
       lastPlane = st.activePlane;
     }
 
-    mapView.syncEntities(game, st.activePlane, st.selected, store.allLairs(), st.selectedLairId);
+    // When a city is selected on the active plane, overlay its catchment and
+    // currently-worked tiles so the player sees the land economy at work.
+    let workedOverlay: WorkedOverlay | null = null;
+    const sel = st.selected;
+    if (sel && sel.kind === 'city') {
+      const selCity = game.cities.find((c) => c.id === sel.id);
+      if (selCity && selCity.plane === st.activePlane) {
+        workedOverlay = {
+          catchment: catchmentTiles(game, selCity),
+          worked: workedTiles(game, CONTENT, selCity),
+        };
+      }
+    }
+
+    mapView.syncEntities(
+      game,
+      st.activePlane,
+      st.selected,
+      store.allLairs(),
+      st.selectedLairId,
+      workedOverlay,
+    );
 
     if (st.centerRequest) {
       mapView.centerOn(st.centerRequest.x, st.centerRequest.y);

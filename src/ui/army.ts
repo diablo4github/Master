@@ -11,6 +11,8 @@
 
 import type { GameState, GameContent } from '@sim/core/state';
 import type { PlaneId, UnitState, UnitDef } from '@sim/types';
+import { armyOrderOf } from '@sim/core/turn';
+import { chebyshev } from '@sim/units/units';
 
 /** A unit as the stack/army list shows it: name, figures, hp fraction, army. */
 export interface UnitRow {
@@ -40,7 +42,9 @@ export function unitRow(content: GameContent, unit: UnitState): UnitRow {
   return {
     id: unit.id,
     defId: unit.defId,
-    name: def?.name ?? unit.defId,
+    // Provenance name ("1st Grimfang Orc Warriors") when the regiment carries
+    // one, else the generic def name. Used by the stack & army panels.
+    name: unit.name ?? def?.name ?? unit.defId,
     role: def?.role ?? 'unit',
     figures: f.figures,
     maxFigures: f.max,
@@ -118,6 +122,66 @@ export function armyView(game: GameState, content: GameContent, armyId: string):
     x: anchor ? anchor.x : null,
     y: anchor ? anchor.y : null,
   };
+}
+
+export interface ArmyOrderSummary {
+  kind: 'move' | 'fortify' | 'idle';
+  /** Player-facing line, e.g. "Moving to (12, 7) — ~3 turns", "Fortified". */
+  text: string;
+  /** Destination for a move order (for the map / centering), else null. */
+  target: { x: number; y: number } | null;
+}
+
+/**
+ * The standing order an army panel should display. Reads the persisted
+ * `armyOrders` (armies never forget their orders between turns), so the panel
+ * can promise "the army will keep moving next turn" without re-issuing:
+ *
+ *  - move:    "Moving to (x, y) — ~N turns", N a ROUGH estimate = ceil(Chebyshev
+ *             distance from the army's current tile / pace). It is deliberately
+ *             approximate (ignores terrain cost and pathing detours) — a hint,
+ *             not a promise.
+ *  - fortify: "Fortified (holding position)".
+ *  - idle:    "Awaiting orders".
+ */
+export function armyOrderSummary(game: GameState, content: GameContent, armyId: string): ArmyOrderSummary {
+  const order = armyOrderOf(game, armyId);
+  if (!order) return { kind: 'idle', text: 'Awaiting orders', target: null };
+  if (order.kind === 'fortify') {
+    return { kind: 'fortify', text: 'Fortified (holding position)', target: null };
+  }
+  const view = armyView(game, content, armyId);
+  const pace = view.pace > 0 ? view.pace : 1;
+  let text = `Moving to (${order.x}, ${order.y})`;
+  if (view.x !== null && view.y !== null) {
+    const dist = chebyshev(view.x, view.y, order.x, order.y);
+    const turns = Math.max(1, Math.ceil(dist / pace));
+    text += dist === 0 ? ' — arriving' : ` — ~${turns} turn${turns > 1 ? 's' : ''}`;
+  }
+  return { kind: 'move', text, target: { x: order.x, y: order.y } };
+}
+
+/** Distinct armies present among a set of stack rows (for "Join <army>"). */
+export interface PresentArmy {
+  armyId: string;
+  /** A short label: the army's lead member name. */
+  label: string;
+  size: number;
+}
+
+/**
+ * Armies represented in a tile's stack rows, each with a human label (its lead
+ * member's name) and size — the stack panel offers a "Join <label>" per entry.
+ */
+export function armiesPresent(rows: readonly UnitRow[]): PresentArmy[] {
+  const byId = new Map<string, PresentArmy>();
+  for (const r of rows) {
+    if (r.armyId === undefined) continue;
+    const cur = byId.get(r.armyId);
+    if (cur) cur.size += 1;
+    else byId.set(r.armyId, { armyId: r.armyId, label: r.name, size: 1 });
+  }
+  return [...byId.values()];
 }
 
 /**

@@ -82,6 +82,13 @@ export class BattleView {
   private readonly markers = new Graphics();
   private readonly tokenLayer = new Container();
   private readonly fxLayer = new Container();
+  /** Hover tooltip (unit provenance name); sits above everything, never cleared. */
+  private readonly tooltip = new Container();
+  private tooltipBg = new Graphics();
+  private tooltipText: Text | null = null;
+
+  /** report-unit-id → display name (provenance), supplied by the viewer. */
+  private names: Map<string, string> = new Map();
 
   // Field geometry
   private fieldW = 20;
@@ -113,11 +120,55 @@ export class BattleView {
     app.stage.addChild(this.markers);
     app.stage.addChild(this.tokenLayer);
     app.stage.addChild(this.fxLayer);
+    app.stage.addChild(this.tooltip);
+    this.tooltip.visible = false;
+    this.tooltip.addChild(this.tooltipBg);
     app.ticker.add(this.tick);
   }
 
   setBank(bank: SpriteBank): void {
     this.bank = bank;
+  }
+
+  /** Supply provenance display names (report-unit-id → name) for tooltips. */
+  setNames(names: Map<string, string>): void {
+    this.names = names;
+  }
+
+  private showTooltip(name: string, x: number, y: number): void {
+    if (this.tooltipText) {
+      this.tooltip.removeChild(this.tooltipText);
+      this.tooltipText.destroy();
+    }
+    const t = new Text({
+      text: name,
+      style: {
+        fontFamily: 'Georgia, serif',
+        fontSize: 13,
+        fontWeight: 'bold',
+        fill: '#f4ecd6',
+      },
+    });
+    t.anchor.set(0.5, 1);
+    this.tooltipText = t;
+    const padX = 6;
+    const padY = 3;
+    const w = t.width + padX * 2;
+    const h = t.height + padY * 2;
+    this.tooltipBg.clear();
+    this.tooltipBg
+      .roundRect(-w / 2, -h, w, h, 4)
+      .fill({ color: 0x14110c, alpha: 0.92 })
+      .stroke({ color: 0xf2d58f, width: 1, alpha: 0.8 });
+    t.y = -padY;
+    this.tooltip.addChild(t);
+    this.tooltip.x = x;
+    this.tooltip.y = y;
+    this.tooltip.visible = true;
+  }
+
+  private hideTooltip(): void {
+    this.tooltip.visible = false;
   }
 
   destroy(): void {
@@ -392,6 +443,13 @@ export class BattleView {
     cont.alpha = alpha;
 
     const r = this.cell * 0.42;
+
+    // Hover tooltip with the regiment's provenance name.
+    const displayName = this.names.get(info.summary.id) ?? info.summary.name;
+    cont.eventMode = 'static';
+    cont.cursor = 'pointer';
+    cont.on('pointerover', () => this.showTooltip(displayName, cx, cy - r - this.cell * 0.32));
+    cont.on('pointerout', () => this.hideTooltip());
 
     // Side-colored base disc + outline.
     const disc = new Graphics();

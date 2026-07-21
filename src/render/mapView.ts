@@ -33,6 +33,17 @@ export interface MapLair {
   cleared: boolean;
 }
 
+/**
+ * A selected city's land economy, drawn as an overlay so the player SEES that
+ * terrain is the economy: the whole catchment gets a subtle outline, and the
+ * tiles the population is actually working get a brighter fill. Computed by the
+ * caller (which holds GameContent) via catchmentTiles / workedTiles.
+ */
+export interface WorkedOverlay {
+  catchment: { x: number; y: number }[];
+  worked: { x: number; y: number }[];
+}
+
 const TILE = 24;
 const ZOOM_STEPS = [1, 2, 3] as const;
 
@@ -116,11 +127,28 @@ export class MapView {
     selected: Selection | null,
     lairs: MapLair[] = [],
     selectedLairId: string | null = null,
+    workedOverlay: WorkedOverlay | null = null,
   ): void {
     this.entityLayer.removeChildren();
     this.labelLayer.removeChildren();
     this.labelAnchors = [];
     this.highlight.clear();
+
+    // Worked-land overlay (under cities/units, since it lives in `highlight`,
+    // which sits below the entity layer): draw the catchment outline first, then
+    // the brighter worked-tile fills on top.
+    if (workedOverlay) {
+      for (const t of workedOverlay.catchment) {
+        this.highlight
+          .rect(t.x * TILE + 1, t.y * TILE + 1, TILE - 2, TILE - 2)
+          .stroke({ color: 0x8ff0c0, width: 1, alpha: 0.3 });
+      }
+      for (const t of workedOverlay.worked) {
+        this.highlight
+          .rect(t.x * TILE + 2, t.y * TILE + 2, TILE - 4, TILE - 4)
+          .fill({ color: 0x8ff0c0, alpha: 0.22 });
+      }
+    }
 
     // Lairs (drawn first, under cities/units).
     for (const lair of lairs) {

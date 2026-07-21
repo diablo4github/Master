@@ -28,6 +28,7 @@ import {
   battleStart,
   type FeedLine,
 } from './battleSummary';
+import { resolveBattleNames } from './battleNames';
 
 const SPEEDS = [1, 2, 4] as const;
 
@@ -42,6 +43,8 @@ export class BattleViewer {
   private root: HTMLElement | null = null;
 
   private rec: BattleRecord | null = null;
+  /** Resolved report-unit-id → provenance display name for this battle. */
+  private names: Map<string, string> = new Map();
   private feed: FeedLine[] = [];
   private feedEls: { line: FeedLine; node: HTMLElement }[] = [];
   private feedListEl: HTMLElement | null = null;
@@ -87,16 +90,22 @@ export class BattleViewer {
     if (!this.app || !this.view) return;
     this.app.canvas.style.display = 'block';
 
-    this.feed = buildFeed(rec.report);
+    // Resolve provenance display names UI-side (the engine schema is frozen and
+    // only carries def names — see battleNames.ts) and thread them through the
+    // feed, end card, and token tooltips.
+    this.names = resolveBattleNames(rec.report, this.store.getState().game);
+    this.feed = buildFeed(rec.report, this.names);
     this.lastFeedTick = -1;
     this.endShown = false;
 
     // Parse the report first so getMaxTick() is correct when the scrubber is
-    // built, then wire the chrome and start playback.
+    // built, then wire the chrome. Playback starts PAUSED at tick 0 (the play
+    // button pulses) so the player consciously begins the replay.
     this.view.setReport(rec.report);
+    this.view.setNames(this.names);
     this.buildChrome(rec);
     this.view.seek(0);
-    this.view.play();
+    this.view.pause();
   }
 
   close(): void {
@@ -172,7 +181,9 @@ export class BattleViewer {
     const stepBack = el('button', { class: 'bv-ctl', type: 'button', title: 'Step back', text: '◀|' });
     stepBack.addEventListener('click', () => view.stepTick(-1));
 
-    this.playBtn = el('button', { class: 'bv-ctl bv-play', type: 'button', title: 'Play/Pause', text: '▶' });
+    // Starts paused at tick 0, so the play button pulses to invite the first
+    // press (the pulse is cleared in onTime once playback begins/advances).
+    this.playBtn = el('button', { class: 'bv-ctl bv-play pulse', type: 'button', title: 'Play/Pause', text: '▶' });
     this.playBtn.addEventListener('click', () => view.togglePlay());
 
     const stepFwd = el('button', { class: 'bv-ctl', type: 'button', title: 'Step forward', text: '|▶' });
@@ -207,7 +218,7 @@ export class BattleViewer {
   }
 
   private buildEndCard(rec: BattleRecord): HTMLElement {
-    const results = unitResults(rec.report);
+    const results = unitResults(rec.report, this.names);
     const winner = rec.report.outcome.winner;
     const ticks = rec.report.outcome.ticks;
 
@@ -265,7 +276,11 @@ export class BattleViewer {
   // --- Playback sync -------------------------------------------------------
 
   private onTime(s: BattleTime): void {
-    if (this.playBtn) this.playBtn.textContent = s.playing ? '❚❚' : '▶';
+    if (this.playBtn) {
+      this.playBtn.textContent = s.playing ? '❚❚' : '▶';
+      // The invitation pulse belongs only to the untouched opening frame.
+      if (s.playing || s.tick > 0) this.playBtn.classList.remove('pulse');
+    }
     if (this.scrubber && document.activeElement !== this.scrubber) {
       this.scrubber.value = String(Math.min(s.maxTick, Math.round(s.t)));
     }

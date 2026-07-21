@@ -54,6 +54,8 @@ export interface UiState {
   highlightAddPicker: boolean;
   /** Whether the research overlay is open. */
   showResearch: boolean;
+  /** Which research shelf tab is active: the race tree or the magic (school) trees. */
+  researchTab: 'race' | 'magic';
   /** Whether the battle-log list overlay is open. */
   showBattleLog: boolean;
   /** Battle currently being replayed full-screen, or null. */
@@ -94,6 +96,7 @@ export class Store {
       stackChecked: [],
       highlightAddPicker: false,
       showResearch: false,
+      researchTab: 'race',
       showBattleLog: false,
       viewerBattle: null,
       watchedBattleIds: [],
@@ -208,6 +211,29 @@ export class Store {
 
   toggleResearch(open?: boolean): void {
     this.set({ showResearch: open ?? !this.state.showResearch });
+  }
+
+  setResearchTab(tab: 'race' | 'magic'): void {
+    this.set({ researchTab: tab });
+  }
+
+  /**
+   * End-Turn assistant: select an idle army, close overlays, and center on it so
+   * its panel (with Move / Fortify prominent) is what the player sees next.
+   */
+  openArmyOrders(armyId: string): void {
+    const game = this.state.game;
+    const anchor = game?.units.find((u) => u.armyId === armyId) ?? null;
+    this.set({
+      selected: { kind: 'army', id: armyId },
+      selectedLairId: null,
+      moveMode: null,
+      stackChecked: [],
+      highlightAddPicker: false,
+      showResearch: false,
+      showBattleLog: false,
+      centerRequest: anchor ? { x: anchor.x, y: anchor.y } : this.state.centerRequest,
+    });
   }
 
   requestCenter(x: number, y: number): void {

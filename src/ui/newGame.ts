@@ -103,6 +103,10 @@ export function mountNewGame(root: HTMLElement, store: Store): void {
     }
     const setup: PlayerSetup = {
       wizardId: wiz.id,
+      // Denormalize the chosen wizard's schools onto the setup so the sim can
+      // gate magic studies (and the research panel's Magic tab) without
+      // importing content. A pure mage carries one school; an archmage up to 3.
+      schools: [...wiz.schools],
       retorts,
       startWorld: sel.world,
       raceId: sel.raceId,
